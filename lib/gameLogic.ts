@@ -79,9 +79,14 @@ export function getWinningLine(
   return null;
 }
 
-// Short alphanumeric game code
+// Short alphanumeric game code — excludes ambiguous chars (0, O, I, 1, L)
 export function generateGameCode(): string {
-  return Math.random().toString(36).substring(2, 8).toUpperCase();
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return code;
 }
 
 // Simple unique ID

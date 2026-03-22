@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -13,10 +13,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, radius, fontSize } from '../../../constants/theme';
 import { listenToGame, listenToMarks, listenToPredictions, getCard } from '../../../lib/firestore';
 import { getWinningLine } from '../../../lib/gameLogic';
-import { useGameStore, useGameStore as useStore } from '../../../store/gameStore';
+import { useGameStore } from '../../../store/gameStore';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const GRID_PADDING = spacing.lg * 2;
+
+interface WinnerCard {
+  id: string;
+  nickname: string;
+  grid: string[];
+}
 
 export default function WinnerScreen() {
   const { id: gameId } = useLocalSearchParams<{ id: string }>();
@@ -27,8 +33,10 @@ export default function WinnerScreen() {
   const predictions = useGameStore(s => s.predictions);
   const playerId = useGameStore(s => s.playerId);
 
-  const [winnerCard, setWinnerCard] = useState<string[] | null>(null);
-  const [loadingCard, setLoadingCard] = useState(true);
+  const [winnerCards, setWinnerCards] = useState<WinnerCard[]>([]);
+  const [loadingCards, setLoadingCards] = useState(true);
+  const [carouselIndex, setCarouselIndex] = useState(0);
+  const carouselRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     if (!gameId) return;
@@ -40,38 +48,85 @@ export default function WinnerScreen() {
     return () => unsubs.forEach(u => u());
   }, [gameId]);
 
-  // Load the winner's card
+  const winners = game?.winners ?? [];
+  const isMe = winners.some(w => w.id === playerId);
+
   useEffect(() => {
-    if (!gameId || !game?.winnerId) return;
-    getCard(gameId, game.winnerId).then(grid => {
-      setWinnerCard(grid);
-      setLoadingCard(false);
+    if (!gameId || winners.length === 0) return;
+
+    // Sort so current player's card comes first
+    const sorted = [...winners].sort((a, b) => {
+      if (a.id === playerId) return -1;
+      if (b.id === playerId) return 1;
+      return 0;
     });
-  }, [gameId, game?.winnerId]);
+
+    Promise.all(
+      sorted.map(w => getCard(gameId, w.id).then(grid => grid ? { ...w, grid } : null))
+    ).then(results => {
+      setWinnerCards(results.filter(Boolean) as WinnerCard[]);
+      setLoadingCards(false);
+    });
+  }, [gameId, winners.length]);
 
   const markedIds = new Set(marks.map(m => m.predictionId));
   const gridSize = game?.gridSize ?? 4;
-  const winLine = winnerCard ? getWinningLine(winnerCard, markedIds, gridSize) : null;
   const cellSize = (SCREEN_WIDTH - GRID_PADDING) / gridSize - spacing.xs;
 
   const getPredictionText = (predictionId: string) =>
     predictions.find(p => p.id === predictionId)?.text ?? '…';
 
-  const isMe = game?.winnerId === playerId;
   const reset = useGameStore(s => s.reset);
-
   const handlePlayAgain = () => {
     reset();
     router.replace('/');
   };
 
-  if (!game || loadingCard) {
+  if (!game || loadingCards) {
     return (
       <SafeAreaView style={styles.safe}>
         <ActivityIndicator style={{ flex: 1 }} color={colors.primary} />
       </SafeAreaView>
     );
   }
+
+  const renderCard = (wc: WinnerCard, index: number) => {
+    const winLine = getWinningLine(wc.grid, markedIds, gridSize);
+    const isMyCard = wc.id === playerId;
+    const label = isMyCard ? 'Your winning card' : `${wc.nickname}'s winning card`;
+
+    return (
+      <View key={wc.id} style={[styles.cardPage, { width: SCREEN_WIDTH - spacing.lg * 2 }]}>
+        <Text style={styles.cardLabel}>{label}</Text>
+        <View style={styles.grid}>
+          {wc.grid.map((predictionId, i) => {
+            const isMarked = markedIds.has(predictionId);
+            const isWinCell = winLine?.includes(i) ?? false;
+            return (
+              <View
+                key={predictionId}
+                style={[
+                  styles.cell,
+                  { width: cellSize, height: cellSize },
+                  isMarked && styles.cellMarked,
+                  isWinCell && styles.cellWin,
+                ]}
+              >
+                <Text
+                  style={[styles.cellText, isMarked && styles.cellTextMarked]}
+                  numberOfLines={4}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.6}
+                >
+                  {getPredictionText(predictionId)}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      </View>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -80,43 +135,43 @@ export default function WinnerScreen() {
         <View style={styles.banner}>
           <Text style={styles.emoji}>{isMe ? '🎉' : '🏆'}</Text>
           <Text style={styles.winnerLabel}>
-            {isMe ? 'You won!' : `${game.winnerNickname} won!`}
+            {isMe
+              ? winners.length > 1
+                ? `You tied with ${winners.filter(w => w.id !== playerId).map(w => w.nickname).join(' & ')}!`
+                : 'You won!'
+              : winners.length === 1
+                ? `${winners[0].nickname} won!`
+                : winners.map(w => w.nickname).join(' & ') + ' tied!'}
           </Text>
           <Text style={styles.bingoo}>BINGOO!</Text>
         </View>
 
-        {/* Winner's card */}
-        {winnerCard && (
+        {/* Card(s) */}
+        {winnerCards.length === 1 ? (
           <View style={styles.cardSection}>
-            <Text style={styles.cardLabel}>Winning card</Text>
-            <View style={styles.grid}>
-              {winnerCard.map((predictionId, index) => {
-                const isMarked = markedIds.has(predictionId);
-                const isWinCell = winLine?.includes(index) ?? false;
-                return (
-                  <View
-                    key={predictionId}
-                    style={[
-                      styles.cell,
-                      { width: cellSize, height: cellSize },
-                      isMarked && styles.cellMarked,
-                      isWinCell && styles.cellWin,
-                    ]}
-                  >
-                    <Text
-                      style={[styles.cellText, isMarked && styles.cellTextMarked]}
-                      numberOfLines={4}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.6}
-                    >
-                      {getPredictionText(predictionId)}
-                    </Text>
-                  </View>
-                );
-              })}
+            {renderCard(winnerCards[0], 0)}
+          </View>
+        ) : winnerCards.length > 1 ? (
+          <View style={styles.cardSection}>
+            <ScrollView
+              ref={carouselRef}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={e => {
+                const page = Math.round(e.nativeEvent.contentOffset.x / (SCREEN_WIDTH - spacing.lg * 2));
+                setCarouselIndex(page);
+              }}
+            >
+              {winnerCards.map((wc, i) => renderCard(wc, i))}
+            </ScrollView>
+            <View style={styles.dots}>
+              {winnerCards.map((_, i) => (
+                <View key={i} style={[styles.dot, i === carouselIndex && styles.dotActive]} />
+              ))}
             </View>
           </View>
-        )}
+        ) : null}
 
         <TouchableOpacity style={styles.button} onPress={handlePlayAgain}>
           <Text style={styles.buttonText}>Back to home</Text>
@@ -132,7 +187,7 @@ const styles = StyleSheet.create({
 
   banner: { alignItems: 'center', gap: spacing.sm, paddingTop: spacing.xl },
   emoji: { fontSize: 64 },
-  winnerLabel: { fontSize: fontSize.xl, fontWeight: '700', color: colors.text },
+  winnerLabel: { fontSize: fontSize.xl, fontWeight: '700', color: colors.text, textAlign: 'center' },
   bingoo: {
     fontSize: 52,
     fontWeight: '900',
@@ -140,7 +195,8 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
   },
 
-  cardSection: { width: '100%', gap: spacing.md, alignItems: 'center' },
+  cardSection: { width: '100%', alignItems: 'center', gap: spacing.md },
+  cardPage: { alignItems: 'center', gap: spacing.sm },
   cardLabel: { fontSize: fontSize.md, fontWeight: '600', color: colors.textLight },
 
   grid: {
@@ -170,6 +226,10 @@ const styles = StyleSheet.create({
   },
   cellText: { fontSize: 11, color: colors.text, textAlign: 'center', lineHeight: 14 },
   cellTextMarked: { color: colors.markedText, fontWeight: '600' },
+
+  dots: { flexDirection: 'row', gap: spacing.xs, justifyContent: 'center' },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.border },
+  dotActive: { backgroundColor: colors.primary },
 
   button: {
     backgroundColor: colors.primary,

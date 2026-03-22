@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Dimensions,
   ScrollView,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -15,13 +16,13 @@ import { colors, spacing, radius, fontSize } from '../../../constants/theme';
 import {
   listenToGame,
   listenToMarks,
+  listenToPlayers,
   listenToPredictions,
   markPrediction,
   announceWinner,
   getCard,
-  Mark,
 } from '../../../lib/firestore';
-import { checkWin, getWinningLine } from '../../../lib/gameLogic';
+import { getWinningLine } from '../../../lib/gameLogic';
 import { useGameStore } from '../../../store/gameStore';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -29,36 +30,36 @@ const GRID_PADDING = spacing.lg * 2;
 
 export default function PlayScreen() {
   const { id: gameId } = useLocalSearchParams<{ id: string }>();
-  const { playerId, nickname, setGame, setMarks, setPredictions, setMyCard } = useGameStore();
+  const { playerId, nickname, setGame, setMarks, setPredictions, setMyCard, setPlayers } = useGameStore();
 
   const game = useGameStore(s => s.game);
   const marks = useGameStore(s => s.marks);
   const predictions = useGameStore(s => s.predictions);
+  const players = useGameStore(s => s.players);
   const myCard = useGameStore(s => s.myCard);
 
   const [winningLine, setWinningLine] = useState<number[] | null>(null);
   const [loadingCard, setLoadingCard] = useState(true);
+  const [selectedPredId, setSelectedPredId] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
 
   const gridSize = game?.gridSize ?? 4;
   const cellSize = (SCREEN_WIDTH - GRID_PADDING) / gridSize - spacing.xs;
 
-  // Set up Firestore listeners
   useEffect(() => {
     if (!gameId) return;
     const unsubs = [
       listenToGame(gameId, g => {
         setGame(g);
-        if (g.status === 'finished') {
-          router.replace(`/game/${gameId}/winner`);
-        }
+        if (g.status === 'finished') router.replace(`/game/${gameId}/winner`);
       }),
       listenToMarks(gameId, setMarks),
       listenToPredictions(gameId, setPredictions),
+      listenToPlayers(gameId, setPlayers),
     ];
     return () => unsubs.forEach(u => u());
   }, [gameId]);
 
-  // Load this player's card
   useEffect(() => {
     if (!gameId || !playerId) return;
     getCard(gameId, playerId).then(grid => {
@@ -67,12 +68,11 @@ export default function PlayScreen() {
     });
   }, [gameId, playerId]);
 
-  // Check for win after every marks update
   useEffect(() => {
-    if (!myCard || !playerId || !gameId || !game || game.status !== 'active') return;
+    if (!myCard || !playerId || !gameId || !game || (game.status !== 'active' && game.status !== 'finished')) return;
     const markedSet = new Set(marks.map(m => m.predictionId));
     const line = getWinningLine(myCard, markedSet, gridSize);
-    if (line) {
+    if (line && !winningLine) {
       setWinningLine(line);
       announceWinner(gameId, playerId, nickname ?? 'Someone').catch(() => {});
     }
@@ -80,42 +80,34 @@ export default function PlayScreen() {
 
   const markedIds = new Set(marks.map(m => m.predictionId));
 
-  const handleCellPress = (predictionId: string) => {
+  const getPrediction = (predictionId: string) =>
+    predictions.find(p => p.id === predictionId);
+
+  const getPredictionText = (predictionId: string) =>
+    getPrediction(predictionId)?.text ?? '…';
+
+  const getPlayerName = (pid: string | undefined) =>
+    players.find(p => p.id === pid)?.nickname ?? '…';
+
+  const getMarkedByNickname = (predictionId: string) =>
+    marks.find(m => m.predictionId === predictionId)?.markedByNickname;
+
+  // Don't show marks about the current player in the feed
+  const visibleMarks = marks.filter(m => {
+    const pred = getPrediction(m.predictionId);
+    return pred?.subjectId !== playerId;
+  });
+
+  const doMarkPrediction = (predictionId: string) => {
     if (!gameId || !playerId || !nickname) return;
-    if (markedIds.has(predictionId)) return; // already marked
-
-    const pred = predictions.find(p => p.id === predictionId);
-    const subject = pred?.subjectId;
-
-    Alert.alert(
-      'Mark as true?',
-      'This cannot be undone. Once marked, everyone can see it.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Yes, mark it',
-          onPress: () => {
-            markPrediction(gameId, predictionId, playerId, nickname).catch(() => {
-              Alert.alert('Error', 'Could not mark this prediction. Try again.');
-            });
-          },
-        },
-      ]
-    );
+    markPrediction(gameId, predictionId, playerId, nickname).catch(() => {
+      Alert.alert('Error', 'Could not mark this prediction. Try again.');
+    });
+    setSelectedPredId(null);
   };
 
-  const getPredictionText = (predictionId: string) => {
-    return predictions.find(p => p.id === predictionId)?.text ?? '…';
-  };
-
-  const getSubjectName = (predictionId: string) => {
-    const pred = predictions.find(p => p.id === predictionId);
-    return pred?.subjectId; // we'll look up from players in store if needed
-  };
-
-  const getMarkedBy = (predictionId: string) => {
-    return marks.find(m => m.predictionId === predictionId)?.markedByNickname;
-  };
+  const selectedPred = selectedPredId ? getPrediction(selectedPredId) : null;
+  const selectedIsMarked = selectedPredId ? markedIds.has(selectedPredId) : false;
 
   if (loadingCard || !myCard) {
     return (
@@ -140,7 +132,6 @@ export default function PlayScreen() {
           {myCard.map((predictionId, index) => {
             const isMarked = markedIds.has(predictionId);
             const isWinCell = winningLine?.includes(index) ?? false;
-            const markedBy = isMarked ? getMarkedBy(predictionId) : undefined;
 
             return (
               <TouchableOpacity
@@ -151,20 +142,20 @@ export default function PlayScreen() {
                   isMarked && styles.cellMarked,
                   isWinCell && styles.cellWin,
                 ]}
-                onPress={() => handleCellPress(predictionId)}
-                activeOpacity={isMarked ? 1 : 0.7}
+                onPress={() => setSelectedPredId(predictionId)}
+                activeOpacity={0.7}
               >
                 <Text
                   style={[styles.cellText, isMarked && styles.cellTextMarked]}
-                  numberOfLines={4}
+                  numberOfLines={5}
                   adjustsFontSizeToFit
-                  minimumFontScale={0.6}
+                  minimumFontScale={0.5}
                 >
                   {getPredictionText(predictionId)}
                 </Text>
-                {isMarked && markedBy && (
+                {isMarked && (
                   <Text style={styles.markedBy} numberOfLines={1}>
-                    ✓ {markedBy}
+                    ✓ {getMarkedByNickname(predictionId)}
                   </Text>
                 )}
               </TouchableOpacity>
@@ -173,17 +164,116 @@ export default function PlayScreen() {
         </View>
 
         {/* Mark log */}
-        {marks.length > 0 && (
-          <View style={styles.log}>
-            <Text style={styles.logTitle}>Recent marks</Text>
-            {[...marks].reverse().slice(0, 5).map(m => (
-              <Text key={m.predictionId} style={styles.logEntry}>
-                {m.markedByNickname} marked "{getPredictionText(m.predictionId)}"
+        {visibleMarks.length > 0 && (
+          <TouchableOpacity
+            style={styles.log}
+            onPress={() => setShowHistory(true)}
+            activeOpacity={0.8}
+          >
+            <View style={styles.logHeader}>
+              <Text style={styles.logTitle}>Recent marks</Text>
+              <Text style={styles.logSeeAll}>See all →</Text>
+            </View>
+            {[...visibleMarks].reverse().slice(0, 3).map(m => (
+              <Text key={m.predictionId} style={styles.logEntry} numberOfLines={1}>
+                <Text style={styles.logAuthor}>{m.markedByNickname}</Text>
+                {' marked "'}
+                {getPredictionText(m.predictionId)}
+                {'"'}
               </Text>
             ))}
-          </View>
+          </TouchableOpacity>
         )}
       </ScrollView>
+
+      {/* Cell detail modal */}
+      <Modal
+        visible={!!selectedPredId}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedPredId(null)}
+      >
+        <TouchableOpacity
+          style={styles.overlay}
+          activeOpacity={1}
+          onPress={() => setSelectedPredId(null)}
+        >
+          <TouchableOpacity style={styles.modalCard} activeOpacity={1}>
+            {selectedPred && (
+              <>
+                <Text style={styles.modalPredText}>{selectedPred.text}</Text>
+                <View style={styles.modalMeta}>
+                  <Text style={styles.modalMetaText}>
+                    About {getPlayerName(selectedPred.subjectId)}
+                  </Text>
+                  <Text style={styles.modalMetaText}>
+                    Written by {getPlayerName(selectedPred.authorId)}
+                  </Text>
+                </View>
+                {selectedIsMarked ? (
+                  <View style={styles.markedBadge}>
+                    <Text style={styles.markedBadgeText}>
+                      ✓ Marked by {getMarkedByNickname(selectedPredId!)}
+                    </Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.markButton}
+                    onPress={() => doMarkPrediction(selectedPredId!)}
+                  >
+                    <Text style={styles.markButtonText}>Mark as true</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={styles.closeButton}
+                  onPress={() => setSelectedPredId(null)}
+                >
+                  <Text style={styles.closeButtonText}>Close</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Marks history modal */}
+      <Modal
+        visible={showHistory}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowHistory(false)}
+      >
+        <TouchableOpacity
+          style={styles.overlay}
+          activeOpacity={1}
+          onPress={() => setShowHistory(false)}
+        >
+          <TouchableOpacity style={[styles.modalCard, styles.historyCard]} activeOpacity={1}>
+            <Text style={styles.historyTitle}>All marks</Text>
+            <ScrollView style={styles.historyScroll} bounces={false}>
+              {[...visibleMarks].reverse().map(m => {
+                const pred = getPrediction(m.predictionId);
+                return (
+                  <View key={m.predictionId} style={styles.historyEntry}>
+                    <Text style={styles.historyEntryText}>
+                      "{getPredictionText(m.predictionId)}"
+                    </Text>
+                    <Text style={styles.historyEntryMeta}>
+                      {m.markedByNickname} · about {getPlayerName(pred?.subjectId)}
+                    </Text>
+                  </View>
+                );
+              })}
+            </ScrollView>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setShowHistory(false)}
+            >
+              <Text style={styles.closeButtonText}>Close</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -222,10 +312,11 @@ const styles = StyleSheet.create({
     borderColor: colors.secondary,
   },
   cellText: {
-    fontSize: 11,
+    fontSize: 14,
+    fontWeight: '700',
     color: colors.text,
     textAlign: 'center',
-    lineHeight: 14,
+    lineHeight: 18,
   },
   cellTextMarked: { color: colors.markedText, fontWeight: '600' },
   markedBy: {
@@ -244,6 +335,81 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  logHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   logTitle: { fontSize: fontSize.sm, fontWeight: '700', color: colors.text },
+  logSeeAll: { fontSize: fontSize.sm, color: colors.primary, fontWeight: '600' },
   logEntry: { fontSize: fontSize.sm, color: colors.textLight },
+  logAuthor: { fontWeight: '700', color: colors.text },
+
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  modalCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    width: '100%',
+    gap: spacing.md,
+  },
+  modalPredText: {
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    color: colors.text,
+    textAlign: 'center',
+    lineHeight: 28,
+  },
+  modalMeta: { gap: spacing.xs },
+  modalMetaText: {
+    fontSize: fontSize.sm,
+    color: colors.textLight,
+    textAlign: 'center',
+  },
+  markedBadge: {
+    backgroundColor: colors.marked,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    alignItems: 'center',
+  },
+  markedBadgeText: { color: '#fff', fontWeight: '700', fontSize: fontSize.md },
+  markButton: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    alignItems: 'center',
+  },
+  markButtonText: { color: '#fff', fontSize: fontSize.md, fontWeight: '700' },
+  closeButton: { alignItems: 'center', padding: spacing.sm },
+  closeButtonText: { color: colors.textLight, fontSize: fontSize.md },
+
+  historyCard: { maxHeight: '80%' },
+  historyTitle: {
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    color: colors.text,
+    textAlign: 'center',
+  },
+  historyScroll: { maxHeight: 400 },
+  historyEntry: {
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: spacing.xs,
+  },
+  historyEntryText: {
+    fontSize: fontSize.md,
+    color: colors.text,
+    fontStyle: 'italic',
+  },
+  historyEntryMeta: {
+    fontSize: fontSize.sm,
+    color: colors.textLight,
+  },
 });

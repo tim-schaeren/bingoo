@@ -5,17 +5,24 @@ import {
   getDoc,
   getDocs,
   updateDoc,
+  deleteDoc,
   onSnapshot,
   query,
   where,
   serverTimestamp,
+  arrayUnion,
   Timestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { generateGameCode, generateId, generateCards, computeGridSize } from './gameLogic';
 import { currentUid } from './auth';
 
-export type GameStatus = 'lobby' | 'active' | 'finished';
+export type GameStatus = 'lobby' | 'active' | 'finished' | 'cancelled';
+
+export interface Winner {
+  id: string;
+  nickname: string;
+}
 
 export interface Game {
   id: string;
@@ -24,8 +31,7 @@ export interface Game {
   hostId: string;
   hostNickname: string;
   gridSize: number;
-  winnerId: string | null;
-  winnerNickname: string | null;
+  winners: Winner[];
   createdAt: Timestamp;
 }
 
@@ -66,8 +72,7 @@ export async function createGame(
     hostId: playerId,
     hostNickname,
     gridSize: 0, // computed when the game starts
-    winnerId: null,
-    winnerNickname: null,
+    winners: [],
     createdAt: serverTimestamp(),
   });
 
@@ -105,23 +110,34 @@ export async function joinGame(
 
 // ─── Predictions ──────────────────────────────────────────────────────────────
 
-export async function submitPredictions(
+export async function addPrediction(
   gameId: string,
   authorId: string,
-  predictions: { subjectId: string; text: string }[]
+  subjectId: string,
+  text: string
 ): Promise<void> {
-  const writes = predictions.map(p =>
-    setDoc(doc(db, 'games', gameId, 'predictions', generateId()), {
-      authorId,
-      subjectId: p.subjectId,
-      text: p.text.trim(),
-      createdAt: serverTimestamp(),
-    })
-  );
-  await Promise.all(writes);
-  await updateDoc(doc(db, 'games', gameId, 'players', authorId), {
+  await setDoc(doc(db, 'games', gameId, 'predictions', generateId()), {
+    authorId,
+    subjectId,
+    text: text.trim(),
+    createdAt: serverTimestamp(),
+  });
+}
+
+export async function markPlayerDone(gameId: string, playerId: string): Promise<void> {
+  await updateDoc(doc(db, 'games', gameId, 'players', playerId), {
     predictionsSubmitted: true,
   });
+}
+
+export async function markPlayerWriting(gameId: string, playerId: string): Promise<void> {
+  await updateDoc(doc(db, 'games', gameId, 'players', playerId), {
+    predictionsSubmitted: false,
+  });
+}
+
+export async function deletePrediction(gameId: string, predictionId: string): Promise<void> {
+  await deleteDoc(doc(db, 'games', gameId, 'predictions', predictionId));
 }
 
 // ─── Start game ───────────────────────────────────────────────────────────────
@@ -162,8 +178,7 @@ export async function announceWinner(
 ): Promise<void> {
   await updateDoc(doc(db, 'games', gameId), {
     status: 'finished',
-    winnerId,
-    winnerNickname,
+    winners: arrayUnion({ id: winnerId, nickname: winnerNickname }),
   });
 }
 
@@ -200,3 +215,14 @@ export function listenToMarks(gameId: string, callback: (marks: Mark[]) => void)
     callback(snap.docs.map(d => ({ predictionId: d.id, ...d.data() }) as Mark));
   });
 }
+
+// ─── Lobby management ────────────────────────────────────────────────────────
+
+export async function cancelGame(gameId: string): Promise<void> {
+  await updateDoc(doc(db, 'games', gameId), { status: 'cancelled' });
+}
+
+export async function leaveGame(gameId: string, playerId: string): Promise<void> {
+  await deleteDoc(doc(db, 'games', gameId, 'players', playerId));
+}
+

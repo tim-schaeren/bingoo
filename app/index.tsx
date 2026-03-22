@@ -110,25 +110,23 @@ export default function HomeScreen() {
 								style={styles.primaryButton}
 								onPress={() => setMode('create')}
 							>
-								<Text style={styles.primaryButtonText}>Create a game</Text>
+								<Text style={styles.primaryButtonText}>create</Text>
 							</TouchableOpacity>
 							<TouchableOpacity
 								style={styles.secondaryButton}
 								onPress={() => setMode('join')}
 							>
-								<Text style={styles.secondaryButtonText}>Join a game</Text>
+								<Text style={styles.secondaryButtonText}>join</Text>
 							</TouchableOpacity>
 						</View>
 					)}
 
 					{mode === 'create' && (
 						<View style={styles.form}>
-							<Text style={styles.formTitle}>New game</Text>
-
 							<Text style={styles.label}>Your nickname</Text>
 							<TextInput
 								style={styles.input}
-								placeholder="e.g. Tim"
+								placeholder="e.g. Tom"
 								placeholderTextColor={colors.textLight}
 								value={nickname}
 								onChangeText={setNickname}
@@ -136,18 +134,13 @@ export default function HomeScreen() {
 								autoFocus
 							/>
 
-							<Text style={styles.hint}>
-							Grid size is set automatically based on player count.{'\n'}
-							Each player writes at least 1 prediction about every other player.
-						</Text>
-
 							<TouchableOpacity
 								style={[styles.primaryButton, loading && styles.buttonDisabled]}
 								onPress={handleCreate}
 								disabled={loading}
 							>
 								<Text style={styles.primaryButtonText}>
-									{loading ? 'Creating…' : 'Create game'}
+									{loading ? 'Creating…' : 'Create'}
 								</Text>
 							</TouchableOpacity>
 
@@ -162,12 +155,10 @@ export default function HomeScreen() {
 
 					{mode === 'join' && (
 						<View style={styles.form}>
-							<Text style={styles.formTitle}>Join a game</Text>
-
 							<Text style={styles.label}>Your nickname</Text>
 							<TextInput
 								style={styles.input}
-								placeholder="e.g. Tim"
+								placeholder="e.g. Tom"
 								placeholderTextColor={colors.textLight}
 								value={nickname}
 								onChangeText={setNickname}
@@ -213,8 +204,12 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
 	safe: { flex: 1, backgroundColor: colors.background },
 	flex: { flex: 1 },
-	container: { flexGrow: 1, padding: spacing.lg },
-	header: { alignItems: 'center', paddingVertical: spacing.xxl },
+	container: { flexGrow: 1, padding: spacing.lg, justifyContent: 'center' },
+	header: {
+		alignItems: 'center',
+		paddingVertical: spacing.xl,
+		paddingTop: spacing.xxl,
+	},
 	logo: {
 		fontSize: 56,
 		fontWeight: '900',

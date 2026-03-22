@@ -1,375 +1,633 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  StyleSheet,
-  Alert,
-  Share,
-  ActivityIndicator,
+	View,
+	Text,
+	TextInput,
+	TouchableOpacity,
+	ScrollView,
+	StyleSheet,
+	Alert,
+	Share,
+	ActivityIndicator,
+	KeyboardAvoidingView,
+	Platform,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, radius, fontSize } from '../../../constants/theme';
 import {
-  listenToGame,
-  listenToPlayers,
-  listenToPredictions,
-  submitPredictions,
-  startGame,
-  Player,
-  Prediction,
+	listenToGame,
+	listenToPlayers,
+	listenToPredictions,
+	addPrediction,
+	deletePrediction,
+	markPlayerDone,
+	markPlayerWriting,
+	startGame,
+	cancelGame,
+	leaveGame,
 } from '../../../lib/firestore';
 import { useGameStore } from '../../../store/gameStore';
 
-type PredictionDraft = Record<string, string[]>;
-
 export default function LobbyScreen() {
-  const { id: gameId } = useLocalSearchParams<{ id: string }>();
-  const { playerId, nickname, isHost, setGame, setPlayers, setPredictions } = useGameStore();
+	const { id: gameId } = useLocalSearchParams<{ id: string }>();
+	const { playerId, isHost, setGame, setPlayers, setPredictions } =
+		useGameStore();
 
-  const game = useGameStore(s => s.game);
-  const players = useGameStore(s => s.players);
-  const predictions = useGameStore(s => s.predictions);
+	const game = useGameStore((s) => s.game);
+	const players = useGameStore((s) => s.players);
+	const predictions = useGameStore((s) => s.predictions);
 
-  const [draft, setDraft] = useState<PredictionDraft>({});
-  const [submitted, setSubmitted] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [starting, setStarting] = useState(false);
+	const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(
+		null,
+	);
+	const [predText, setPredText] = useState('');
+	const [adding, setAdding] = useState(false);
+	const [markingDone, setMarkingDone] = useState(false);
+	const [starting, setStarting] = useState(false);
 
-  useEffect(() => {
-    if (!gameId) return;
-    const unsubs = [
-      listenToGame(gameId, g => {
-        setGame(g);
-        if (g.status === 'active') router.replace(`/game/${gameId}/play`);
-      }),
-      listenToPlayers(gameId, setPlayers),
-      listenToPredictions(gameId, setPredictions),
-    ];
-    return () => unsubs.forEach(u => u());
-  }, [gameId]);
+	const inputRef = useRef<TextInput>(null);
 
-  // Restore submitted state on reconnect
-  useEffect(() => {
-    const me = players.find(p => p.id === playerId);
-    if (me?.predictionsSubmitted) setSubmitted(true);
-  }, [players, playerId]);
+	useEffect(() => {
+		if (!gameId) return;
+		const unsubs = [
+			listenToGame(gameId, (g) => {
+				setGame(g);
+				if (g.status === 'active') router.replace(`/game/${gameId}/play`);
+				if (g.status === 'cancelled') {
+					Alert.alert('Game cancelled', 'The host cancelled the game.', [
+						{ text: 'OK', onPress: () => router.replace('/') },
+					]);
+				}
+			}),
+			listenToPlayers(gameId, setPlayers),
+			listenToPredictions(gameId, setPredictions),
+		];
+		return () => unsubs.forEach((u) => u());
+	}, [gameId]);
 
-  // Initialise draft inputs when new players join
-  useEffect(() => {
-    if (!playerId) return;
-    const others = players.filter(p => p.id !== playerId);
-    setDraft(prev => {
-      const next = { ...prev };
-      for (const p of others) {
-        if (!next[p.id]) next[p.id] = [''];
-      }
-      return next;
-    });
-  }, [players, playerId]);
+	// Auto-select first other player when players load
+	useEffect(() => {
+		if (selectedSubjectId) return;
+		const first = players.find((p) => p.id !== playerId);
+		if (first) setSelectedSubjectId(first.id);
+	}, [players]);
 
-  const otherPlayers = players.filter(p => p.id !== playerId);
-  const allSubmitted = players.length > 1 && players.every(p => p.predictionsSubmitted);
+	const otherPlayers = players.filter((p) => p.id !== playerId);
+	const me = players.find((p) => p.id === playerId);
+	const submitted = me?.predictionsSubmitted ?? false;
+	const allSubmitted =
+		players.length > 1 && players.every((p) => p.predictionsSubmitted);
 
-  const handleShare = () => {
-    Share.share({
-      message: `Join my bingoo game!\nCode: ${game?.code}\nbingoo://join/${game?.code}`,
-    });
-  };
+	const getPlayerName = (pid: string | undefined) =>
+		players.find((p) => p.id === pid)?.nickname ?? '…';
 
-  const updatePrediction = (subjectId: string, index: number, text: string) => {
-    setDraft(prev => {
-      const arr = [...(prev[subjectId] ?? [''])];
-      arr[index] = text;
-      return { ...prev, [subjectId]: arr };
-    });
-  };
+	// Pool: everything except predictions about the current player
+	const visiblePredictions = predictions.filter(
+		(p) => p.subjectId !== playerId,
+	);
 
-  const addPrediction = (subjectId: string) => {
-    setDraft(prev => ({
-      ...prev,
-      [subjectId]: [...(prev[subjectId] ?? ['']), ''],
-    }));
-  };
+	// My contributions: which other players I've written about
+	const coveredIds = new Set(
+		predictions.filter((p) => p.authorId === playerId).map((p) => p.subjectId),
+	);
 
-  const removePrediction = (subjectId: string, index: number) => {
-    setDraft(prev => {
-      const arr = [...(prev[subjectId] ?? [''])];
-      if (arr.length === 1) return prev;
-      arr.splice(index, 1);
-      return { ...prev, [subjectId]: arr };
-    });
-  };
+	// Enough predictions in the pool for a 2×2 minimum grid
+	const minVisible = players.reduce(
+		(min, p) => {
+			const count = predictions.filter(
+				(pred) => pred.subjectId !== p.id,
+			).length;
+			return Math.min(min, count);
+		},
+		players.length > 0 ? Infinity : 0,
+	);
+	const enoughPredictions = minVisible >= 4;
 
-  const handleSubmit = async () => {
-    if (!playerId || !gameId) return;
+	const handleShare = () => {
+		Share.share({
+			message: `Join my bingoo!\nCode: ${game?.code}\nbingoo://join/${game?.code}`,
+		});
+	};
 
-    for (const player of otherPlayers) {
-      const texts = (draft[player.id] ?? ['']).filter(t => t.trim());
-      if (texts.length === 0) {
-        Alert.alert('Missing prediction', `You need at least one prediction about ${player.nickname}.`);
-        return;
-      }
-    }
+	const handleAddPrediction = async () => {
+		if (!playerId || !gameId || !selectedSubjectId || !predText.trim()) return;
+		setAdding(true);
+		try {
+			await addPrediction(gameId, playerId, selectedSubjectId, predText.trim());
+			setPredText('');
+			inputRef.current?.focus();
+		} catch {
+			Alert.alert('Error', 'Could not add prediction. Try again.');
+		} finally {
+			setAdding(false);
+		}
+	};
 
-    const allPredictions = otherPlayers.flatMap(player =>
-      (draft[player.id] ?? [])
-        .filter(t => t.trim())
-        .map(text => ({ subjectId: player.id, text }))
-    );
+	const handleMarkDone = async () => {
+		if (!playerId || !gameId) return;
+		setMarkingDone(true);
+		try {
+			await markPlayerDone(gameId, playerId);
+		} catch {
+			Alert.alert('Error', 'Could not save. Try again.');
+			setMarkingDone(false);
+		}
+	};
 
-    setSubmitting(true);
-    try {
-      await submitPredictions(gameId, playerId, allPredictions);
-      setSubmitted(true);
-    } catch {
-      Alert.alert('Error', 'Could not submit predictions. Try again.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
+	const handleKeepWriting = async () => {
+		if (!playerId || !gameId) return;
+		try {
+			await markPlayerWriting(gameId, playerId);
+			setMarkingDone(false);
+		} catch {
+			Alert.alert('Error', 'Could not update. Try again.');
+		}
+	};
 
-  const handleStartGame = async () => {
-    if (!gameId || !game) return;
+	const handleDeletePrediction = (predictionId: string) => {
+		if (!gameId) return;
+		Alert.alert('Remove prediction', 'Delete this from the pool?', [
+			{ text: 'Cancel', style: 'cancel' },
+			{
+				text: 'Delete',
+				style: 'destructive',
+				onPress: () => deletePrediction(gameId, predictionId).catch(() => {
+					Alert.alert('Error', 'Could not delete. Try again.');
+				}),
+			},
+		]);
+	};
 
-    if (!allSubmitted) {
-      Alert.alert(
-        'Not everyone is ready',
-        "Some players haven't submitted their predictions yet. Start anyway?",
-        [
-          { text: 'Wait', style: 'cancel' },
-          { text: 'Start anyway', onPress: doStartGame },
-        ]
-      );
-      return;
-    }
+	const handleStartGame = async () => {
+		if (!gameId) return;
 
-    doStartGame();
-  };
+		if (!allSubmitted) {
+			Alert.alert(
+				'Not everyone is ready',
+				"Some players haven't finished writing yet. Start anyway?",
+				[
+					{ text: 'Wait', style: 'cancel' },
+					{ text: 'Start anyway', onPress: doStartGame },
+				],
+			);
+			return;
+		}
 
-  const doStartGame = async () => {
-    if (!gameId) return;
-    setStarting(true);
-    try {
-      await startGame(gameId, players, predictions);
-    } catch {
-      Alert.alert('Error', 'Could not start game. Try again.');
-      setStarting(false);
-    }
-  };
+		doStartGame();
+	};
 
-  if (!game) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <ActivityIndicator style={{ flex: 1 }} color={colors.primary} />
-      </SafeAreaView>
-    );
-  }
+	const doStartGame = async () => {
+		if (!gameId) return;
+		setStarting(true);
+		try {
+			await startGame(gameId, players, predictions);
+		} catch {
+			Alert.alert('Error', 'Could not start game. Try again.');
+			setStarting(false);
+		}
+	};
 
-  return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.gameCode}>{game.code}</Text>
-          <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
-            <Text style={styles.shareButtonText}>Share invite</Text>
-          </TouchableOpacity>
-        </View>
+	const handleCancel = () => {
+		Alert.alert(
+			'Cancel game',
+			'This will end the lobby for everyone. Are you sure?',
+			[
+				{ text: 'Keep playing', style: 'cancel' },
+				{
+					text: 'Cancel game',
+					style: 'destructive',
+					onPress: async () => {
+						try {
+							await cancelGame(gameId!);
+							router.replace('/');
+						} catch {
+							Alert.alert('Error', 'Could not cancel the game. Try again.');
+						}
+					},
+				},
+			],
+		);
+	};
 
-        {/* Players */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Players ({players.length})</Text>
-          {players.map(p => (
-            <View key={p.id} style={styles.playerRow}>
-              <Text style={styles.playerName}>
-                {p.nickname}
-                {p.id === playerId ? ' (you)' : ''}
-                {p.id === game.hostId ? ' · host' : ''}
-              </Text>
-              <Text style={[styles.status, p.predictionsSubmitted && styles.statusDone]}>
-                {p.predictionsSubmitted ? 'Ready ✓' : 'Writing…'}
-              </Text>
-            </View>
-          ))}
-          <Text style={styles.hint}>
-            At least 1 prediction about each other player. Grid size is calculated automatically.
-          </Text>
-        </View>
+	const handleLeave = () => {
+		Alert.alert('Leave lobby', 'You will be removed from this game.', [
+			{ text: 'Stay', style: 'cancel' },
+			{
+				text: 'Leave',
+				style: 'destructive',
+				onPress: async () => {
+					try {
+						await leaveGame(gameId!, playerId!);
+						router.replace('/');
+					} catch {
+						Alert.alert('Error', 'Could not leave the game. Try again.');
+					}
+				},
+			},
+		]);
+	};
 
-        {/* Prediction form or waiting state */}
-        {submitted ? (
-          <View style={styles.waitingBox}>
-            <Text style={styles.waitingTitle}>Predictions submitted!</Text>
-            <Text style={styles.waitingText}>
-              {allSubmitted
-                ? isHost
-                  ? 'Everyone is ready. You can start the game.'
-                  : 'Everyone is ready. Waiting for the host to start…'
-                : 'Waiting for others to finish their predictions…'}
-            </Text>
-            {isHost && (
-              <TouchableOpacity
-                style={[styles.startButton, starting && styles.buttonDisabled]}
-                onPress={handleStartGame}
-                disabled={starting}
-              >
-                <Text style={styles.startButtonText}>
-                  {starting ? 'Starting…' : 'Start game'}
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        ) : (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Your predictions</Text>
-            <Text style={styles.sectionSubtitle}>
-              Write at least 1 prediction about each friend. Add more for a bigger grid!
-            </Text>
+	if (!game) {
+		return (
+			<SafeAreaView style={styles.safe}>
+				<ActivityIndicator style={{ flex: 1 }} color={colors.primary} />
+			</SafeAreaView>
+		);
+	}
 
-            {otherPlayers.length === 0 && (
-              <Text style={styles.hint}>Waiting for friends to join…</Text>
-            )}
+	const selectedSubject = otherPlayers.find((p) => p.id === selectedSubjectId);
+	const canAdd = !!selectedSubjectId && predText.trim().length > 0 && !adding;
 
-            {otherPlayers.map(player => (
-              <View key={player.id} style={styles.playerSection}>
-                <Text style={styles.playerSectionTitle}>About {player.nickname}</Text>
-                {(draft[player.id] ?? ['']).map((text, idx) => (
-                  <View key={idx} style={styles.predictionRow}>
-                    <TextInput
-                      style={styles.predictionInput}
-                      placeholder={`e.g. ${player.nickname} will oversleep`}
-                      placeholderTextColor={colors.textLight}
-                      value={text}
-                      onChangeText={t => updatePrediction(player.id, idx, t)}
-                      multiline
-                      maxLength={120}
-                    />
-                    {(draft[player.id] ?? ['']).length > 1 && (
-                      <TouchableOpacity
-                        style={styles.removeButton}
-                        onPress={() => removePrediction(player.id, idx)}
-                      >
-                        <Text style={styles.removeButtonText}>✕</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                ))}
-                <TouchableOpacity style={styles.addButton} onPress={() => addPrediction(player.id)}>
-                  <Text style={styles.addButtonText}>+ Add another</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
+	return (
+		<SafeAreaView style={styles.safe}>
+			<KeyboardAvoidingView
+				style={styles.flex}
+				behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+			>
+				<ScrollView
+					contentContainerStyle={styles.container}
+					keyboardShouldPersistTaps="handled"
+				>
+					{/* Header */}
+					<View style={styles.header}>
+						<Text style={styles.gameCode}>{game.code}</Text>
+						<View style={styles.headerActions}>
+							<TouchableOpacity
+								style={styles.shareButton}
+								onPress={handleShare}
+							>
+								<Text style={styles.shareButtonText}>invite</Text>
+							</TouchableOpacity>
+							<TouchableOpacity
+								style={styles.leaveButton}
+								onPress={isHost ? handleCancel : handleLeave}
+							>
+								<Text style={styles.leaveButtonText}>
+									{isHost ? 'Quit' : 'Leave'}
+								</Text>
+							</TouchableOpacity>
+						</View>
+					</View>
 
-            {otherPlayers.length > 0 && (
-              <TouchableOpacity
-                style={[styles.submitButton, submitting && styles.buttonDisabled]}
-                onPress={handleSubmit}
-                disabled={submitting}
-              >
-                <Text style={styles.submitButtonText}>
-                  {submitting ? 'Submitting…' : 'Submit predictions'}
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-      </ScrollView>
-    </SafeAreaView>
-  );
+					{/* Players */}
+					<View style={styles.section}>
+						<Text style={styles.sectionMeta}>{players.length} players</Text>
+						{players.map((p) => (
+							<View key={p.id} style={styles.playerRow}>
+								<Text style={styles.playerName}>
+									{p.nickname}
+									{p.id === playerId ? ' (you)' : ''}
+									{p.id === game.hostId ? ' · host' : ''}
+								</Text>
+								<Text
+									style={[
+										styles.status,
+										p.predictionsSubmitted && styles.statusDone,
+									]}
+								>
+									{p.predictionsSubmitted ? 'Done ✓' : 'Writing…'}
+								</Text>
+							</View>
+						))}
+					</View>
+
+					{/* Prediction pool */}
+					<View style={styles.section}>
+						<Text style={styles.sectionMeta}>
+							{visiblePredictions.length} predictions in pool
+						</Text>
+						{visiblePredictions.length === 0 ? (
+							<Text style={styles.hint}>
+								No predictions yet. Add the first one!
+							</Text>
+						) : (
+							visiblePredictions.map((p) => (
+								<View key={p.id} style={styles.poolItem}>
+									<View style={styles.poolItemHeader}>
+										<Text style={styles.poolAbout}>
+											about {getPlayerName(p.subjectId)}
+										</Text>
+										{p.authorId === playerId && !submitted && (
+											<TouchableOpacity onPress={() => handleDeletePrediction(p.id)}>
+												<Text style={styles.poolDelete}>✕</Text>
+											</TouchableOpacity>
+										)}
+									</View>
+									<Text style={styles.poolText}>{p.text}</Text>
+									<Text style={styles.poolAuthor}>
+										{p.authorId === playerId
+											? 'by you'
+											: `by ${getPlayerName(p.authorId)}`}
+									</Text>
+								</View>
+							))
+						)}
+					</View>
+
+					{/* Add prediction form */}
+					{!submitted ? (
+						<View style={styles.section}>
+							{/* Subject chips */}
+							<ScrollView
+								horizontal
+								showsHorizontalScrollIndicator={false}
+								style={styles.chipScroll}
+							>
+								{otherPlayers.map((p) => {
+									const active = selectedSubjectId === p.id;
+									const covered = coveredIds.has(p.id);
+									return (
+										<TouchableOpacity
+											key={p.id}
+											style={[styles.chip, active && styles.chipActive]}
+											onPress={() => {
+												setSelectedSubjectId(p.id);
+												inputRef.current?.focus();
+											}}
+										>
+											<Text
+												style={[
+													styles.chipText,
+													active && styles.chipTextActive,
+												]}
+											>
+												about {p.nickname}
+												{covered ? ' ✓' : ''}
+											</Text>
+										</TouchableOpacity>
+									);
+								})}
+							</ScrollView>
+
+							{/* Text input */}
+							<View style={styles.inputRow}>
+								<TextInput
+									ref={inputRef}
+									style={styles.predictionInput}
+									placeholder={
+										selectedSubject
+											? `e.g. ${selectedSubject.nickname} will oversleep`
+											: 'Select a player above'
+									}
+									placeholderTextColor={colors.textLight}
+									value={predText}
+									onChangeText={setPredText}
+									returnKeyType="done"
+									onSubmitEditing={handleAddPrediction}
+									maxLength={120}
+									editable={!!selectedSubjectId}
+								/>
+								<TouchableOpacity
+									style={[
+										styles.addButton,
+										!canAdd && styles.addButtonDisabled,
+									]}
+									onPress={handleAddPrediction}
+									disabled={!canAdd}
+								>
+									<Text style={styles.addButtonText}>Add</Text>
+								</TouchableOpacity>
+							</View>
+
+							{/* Done button */}
+							<TouchableOpacity
+								style={[
+									styles.doneButton,
+									markingDone && styles.buttonDisabled,
+								]}
+								onPress={handleMarkDone}
+								disabled={markingDone}
+							>
+								<Text style={styles.doneButtonText}>
+									{markingDone ? 'Saving…' : "I'm done writing predictions"}
+								</Text>
+							</TouchableOpacity>
+						</View>
+					) : (
+						<View style={styles.waitingBox}>
+							<Text style={styles.waitingTitle}>Predictions submitted!</Text>
+							<Text style={styles.waitingText}>
+								{allSubmitted
+									? isHost
+										? 'Everyone is ready. You can start the game.'
+										: 'Everyone is ready. Waiting for the host to start…'
+									: 'Waiting for others to finish writing…'}
+							</Text>
+							{isHost && enoughPredictions && (
+								<TouchableOpacity
+									style={[
+										styles.startButton,
+										starting && styles.buttonDisabled,
+									]}
+									onPress={handleStartGame}
+									disabled={starting}
+								>
+									<Text style={styles.startButtonText}>
+										{starting ? 'Starting…' : 'Start game'}
+									</Text>
+								</TouchableOpacity>
+							)}
+							{isHost && !enoughPredictions && (
+								<Text style={styles.notEnoughHint}>
+									Waiting for more predictions before you can start (need{' '}
+									{Math.max(0, 4 - minVisible)} more).
+								</Text>
+							)}
+							<TouchableOpacity
+								onPress={handleKeepWriting}
+								style={styles.keepWritingButton}
+							>
+								<Text style={styles.keepWritingText}>
+									Keep writing predictions
+								</Text>
+							</TouchableOpacity>
+						</View>
+					)}
+				</ScrollView>
+			</KeyboardAvoidingView>
+		</SafeAreaView>
+	);
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
-  container: { padding: spacing.lg, gap: spacing.lg },
+	safe: { flex: 1, backgroundColor: colors.background },
+	flex: { flex: 1 },
+	container: { padding: spacing.lg, gap: spacing.lg },
 
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  gameCode: { fontSize: fontSize.xl, fontWeight: '900', color: colors.primary, letterSpacing: 3 },
-  shareButton: {
-    backgroundColor: colors.primaryLight,
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  shareButtonText: { color: colors.primary, fontWeight: '700', fontSize: fontSize.sm },
+	header: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+	},
+	gameCode: {
+		fontSize: fontSize.xl,
+		fontWeight: '900',
+		color: colors.primary,
+		letterSpacing: 3,
+	},
+	headerActions: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: spacing.sm,
+	},
+	leaveButton: {
+		borderRadius: radius.full,
+		paddingHorizontal: spacing.md,
+		paddingVertical: spacing.sm,
+	},
+	leaveButtonText: {
+		color: colors.error,
+		fontWeight: '600',
+		fontSize: fontSize.sm,
+	},
+	shareButton: {
+		backgroundColor: colors.primaryLight,
+		borderRadius: radius.full,
+		paddingHorizontal: spacing.md,
+		paddingVertical: spacing.sm,
+	},
+	shareButtonText: {
+		color: colors.primary,
+		fontWeight: '700',
+		fontSize: fontSize.sm,
+	},
 
-  section: { gap: spacing.md },
-  sectionTitle: { fontSize: fontSize.lg, fontWeight: '700', color: colors.text },
-  sectionSubtitle: { fontSize: fontSize.sm, color: colors.textLight },
+	section: { gap: spacing.sm },
+	sectionMeta: {
+		fontSize: fontSize.sm,
+		color: colors.textLight,
+		fontWeight: '600',
+		textTransform: 'uppercase',
+		letterSpacing: 0.5,
+	},
+	hint: { fontSize: fontSize.sm, color: colors.textLight, fontStyle: 'italic' },
+	notEnoughHint: {
+		fontSize: fontSize.sm,
+		color: colors.textLight,
+		textAlign: 'center',
+		fontStyle: 'italic',
+	},
 
-  playerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  playerName: { fontSize: fontSize.md, color: colors.text, fontWeight: '500' },
-  status: { fontSize: fontSize.sm, color: colors.textLight },
-  statusDone: { color: colors.success, fontWeight: '600' },
-  hint: { fontSize: fontSize.sm, color: colors.textLight, fontStyle: 'italic' },
+	playerRow: {
+		flexDirection: 'row',
+		justifyContent: 'space-between',
+		alignItems: 'center',
+		backgroundColor: colors.surface,
+		borderRadius: radius.md,
+		padding: spacing.md,
+		borderWidth: 1,
+		borderColor: colors.border,
+	},
+	playerName: { fontSize: fontSize.md, color: colors.text, fontWeight: '500' },
+	status: { fontSize: fontSize.sm, color: colors.textLight },
+	statusDone: { color: colors.success, fontWeight: '600' },
 
-  playerSection: {
-    gap: spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  playerSectionTitle: { fontSize: fontSize.md, fontWeight: '700', color: colors.text },
-  predictionRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
-  predictionInput: {
-    flex: 1,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    padding: spacing.sm,
-    fontSize: fontSize.md,
-    color: colors.text,
-    backgroundColor: colors.background,
-    minHeight: 44,
-  },
-  removeButton: { padding: spacing.xs, marginTop: spacing.xs },
-  removeButtonText: { color: colors.textLight, fontSize: fontSize.md },
-  addButton: { alignSelf: 'flex-start' },
-  addButtonText: { color: colors.primary, fontWeight: '600', fontSize: fontSize.sm },
+	poolItem: {
+		backgroundColor: colors.surface,
+		borderRadius: radius.md,
+		padding: spacing.md,
+		borderWidth: 1,
+		borderColor: colors.border,
+		gap: 2,
+	},
+	poolItemHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+	poolAbout: {
+		fontSize: fontSize.sm,
+		color: colors.primary,
+		fontWeight: '700',
+	},
+	poolDelete: { color: colors.textLight, fontSize: fontSize.md, paddingLeft: spacing.sm },
+	poolText: { fontSize: fontSize.md, color: colors.text },
+	poolAuthor: { fontSize: fontSize.sm, color: colors.textLight, marginTop: 2 },
 
-  submitButton: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    alignItems: 'center',
-    marginTop: spacing.sm,
-  },
-  submitButtonText: { color: '#fff', fontSize: fontSize.md, fontWeight: '700' },
+	chipScroll: { marginBottom: spacing.xs },
+	chip: {
+		borderRadius: radius.full,
+		paddingHorizontal: spacing.md,
+		paddingVertical: spacing.sm,
+		borderWidth: 1.5,
+		borderColor: colors.border,
+		backgroundColor: colors.surface,
+		marginRight: spacing.sm,
+	},
+	chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+	chipText: {
+		fontSize: fontSize.sm,
+		fontWeight: '600',
+		color: colors.textLight,
+	},
+	chipTextActive: { color: '#fff' },
 
-  waitingBox: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    gap: spacing.md,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  waitingTitle: { fontSize: fontSize.lg, fontWeight: '700', color: colors.success },
-  waitingText: { fontSize: fontSize.md, color: colors.textLight, textAlign: 'center' },
+	inputRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'center' },
+	predictionInput: {
+		flex: 1,
+		borderWidth: 1.5,
+		borderColor: colors.border,
+		borderRadius: radius.sm,
+		padding: spacing.sm,
+		fontSize: fontSize.md,
+		color: colors.text,
+		backgroundColor: colors.background,
+	},
+	addButton: {
+		backgroundColor: colors.primary,
+		borderRadius: radius.md,
+		paddingHorizontal: spacing.md,
+		paddingVertical: spacing.sm + 2,
+	},
+	addButtonDisabled: { opacity: 0.4 },
+	addButtonText: { color: '#fff', fontWeight: '700', fontSize: fontSize.sm },
 
-  startButton: {
-    backgroundColor: colors.secondary,
-    borderRadius: radius.lg,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-    marginTop: spacing.sm,
-  },
-  startButtonText: { color: colors.text, fontSize: fontSize.md, fontWeight: '800' },
-  buttonDisabled: { opacity: 0.6 },
+	doneButton: {
+		backgroundColor: colors.surface,
+		borderRadius: radius.lg,
+		padding: spacing.md,
+		alignItems: 'center',
+		borderWidth: 1.5,
+		borderColor: colors.border,
+		marginTop: spacing.xs,
+	},
+	doneButtonText: {
+		color: colors.text,
+		fontSize: fontSize.md,
+		fontWeight: '600',
+	},
+
+	waitingBox: {
+		backgroundColor: colors.surface,
+		borderRadius: radius.lg,
+		padding: spacing.lg,
+		gap: spacing.md,
+		alignItems: 'center',
+		borderWidth: 1,
+		borderColor: colors.border,
+	},
+	waitingTitle: {
+		fontSize: fontSize.lg,
+		fontWeight: '700',
+		color: colors.success,
+	},
+	waitingText: {
+		fontSize: fontSize.md,
+		color: colors.textLight,
+		textAlign: 'center',
+	},
+
+	startButton: {
+		backgroundColor: colors.secondary,
+		borderRadius: radius.lg,
+		paddingHorizontal: spacing.xl,
+		paddingVertical: spacing.md,
+		alignItems: 'center',
+		marginTop: spacing.sm,
+	},
+	startButtonText: {
+		color: colors.text,
+		fontSize: fontSize.md,
+		fontWeight: '800',
+	},
+	buttonDisabled: { opacity: 0.6 },
+	keepWritingButton: { paddingVertical: spacing.sm },
+	keepWritingText: { color: colors.textLight, fontSize: fontSize.sm },
 });

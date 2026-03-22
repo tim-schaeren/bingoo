@@ -22,19 +22,23 @@ service cloud.firestore {
         && request.auth.uid == request.resource.data.hostId
         && request.resource.data.keys().hasAll([
             'code', 'status', 'hostId', 'hostNickname',
-            'gridSize', 'winnerId', 'winnerNickname', 'createdAt'
+            'gridSize', 'winners', 'createdAt'
           ])
         && request.resource.data.status == 'lobby'
         && request.resource.data.gridSize == 0
-        && request.resource.data.winnerId == null;
+        && request.resource.data.winners == [];
 
       allow update: if
         request.auth != null
-        && resource.data.status != 'finished'
+        && resource.data.status != 'cancelled'
         && (
           (request.resource.data.status == 'active' && isHost(gameId))
-          || (request.resource.data.status == 'finished'
-              && request.auth.uid == request.resource.data.winnerId)
+          || (
+              (resource.data.status == 'active' || resource.data.status == 'finished')
+              && request.resource.data.status == 'finished'
+              && request.auth.uid != null
+            )
+          || (request.resource.data.status == 'cancelled' && isHost(gameId))
         );
 
       allow delete: if false;
@@ -55,12 +59,19 @@ service cloud.firestore {
 
         allow update: if
           request.auth != null
-          && request.auth.uid == playerId
           && isLobby(gameId)
-          && request.resource.data.predictionsSubmitted == true
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['predictionsSubmitted']);
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['predictionsSubmitted'])
+          && (
+            // Player submits their own predictions
+            request.auth.uid == playerId
+            // Host resets any player back to unsubmitted
+            || (isHost(gameId) && request.resource.data.predictionsSubmitted == false)
+          );
 
-        allow delete: if false;
+        allow delete: if
+          request.auth != null
+          && request.auth.uid == playerId
+          && isLobby(gameId);
       }
 
       // ─── Predictions ─────────────────────────────────────────────────────────
@@ -78,7 +89,11 @@ service cloud.firestore {
           && request.resource.data.authorId != request.resource.data.subjectId;
 
         allow update: if false;
-        allow delete: if false;
+
+        allow delete: if
+          request.auth != null
+          && request.auth.uid == resource.data.authorId
+          && isLobby(gameId);
       }
 
       // ─── Cards ───────────────────────────────────────────────────────────────
