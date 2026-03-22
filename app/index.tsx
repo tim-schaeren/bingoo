@@ -102,7 +102,7 @@ export default function HomeScreen() {
 					{/* Header */}
 					<View style={styles.header}>
 						<Image
-							source={require('../assets/icon.png')}
+							source={require('../assets/icon_no_bg.png')}
 							style={styles.logoImage}
 						/>
 						<Text style={styles.logo}>bingoo</Text>
@@ -216,9 +216,8 @@ const styles = StyleSheet.create({
 		paddingTop: spacing.xxl,
 	},
 	logoImage: {
-		width: 160,
-		height: 160,
-		borderRadius: 20,
+		width: 240,
+		height: 240,
 		marginBottom: spacing.sm,
 	},
 	logo: {

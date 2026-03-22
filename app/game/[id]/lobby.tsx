@@ -46,7 +46,7 @@ export default function LobbyScreen() {
 	const [adding, setAdding] = useState(false);
 	const [markingDone, setMarkingDone] = useState(false);
 	const [starting, setStarting] = useState(false);
-	const [showWelcome, setShowWelcome] = useState(true);
+	const [showWelcome, setShowWelcome] = useState(isHost);
 
 	const inputRef = useRef<TextInput>(null);
 
