@@ -17,12 +17,14 @@
   "submit": {
     "preview": {
       "ios": {
-        "appleId": "jd2b74yhyx@privaterelay.appleid.com"
+        "appleId": "jd2b74yhyx@privaterelay.appleid.com",
+        "ascAppId": "6760972106"
       }
     },
     "production": {
       "ios": {
-        "appleId": "jd2b74yhyx@privaterelay.appleid.com"
+        "appleId": "jd2b74yhyx@privaterelay.appleid.com",
+        "ascAppId": "6760972106"
       }
     }
   }
