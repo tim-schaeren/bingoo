@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { generateGameCode, generateId, generateCards } from './gameLogic';
+import { currentUid } from './auth';
 
 export type GameStatus = 'lobby' | 'active' | 'finished';
 
@@ -57,7 +58,7 @@ export async function createGame(
   gridSize: number
 ): Promise<{ gameId: string; playerId: string }> {
   const gameId = generateId();
-  const playerId = generateId();
+  const playerId = currentUid(); // Firebase anonymous auth UID
   const code = generateGameCode();
 
   await setDoc(doc(db, 'games', gameId), {
@@ -94,7 +95,7 @@ export async function joinGame(
   gameId: string,
   nickname: string
 ): Promise<{ playerId: string }> {
-  const playerId = generateId();
+  const playerId = currentUid(); // Firebase anonymous auth UID
   await setDoc(doc(db, 'games', gameId, 'players', playerId), {
     nickname,
     predictionsSubmitted: false,

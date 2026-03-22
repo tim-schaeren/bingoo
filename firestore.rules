@@ -8,33 +8,39 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/games/$(gameId)).data;
     }
 
-    function gameStatus(gameId) {
-      return gameData(gameId).status;
-    }
-
-    function isLobby(gameId)  { return gameStatus(gameId) == 'lobby'; }
-    function isActive(gameId) { return gameStatus(gameId) == 'active'; }
+    function isLobby(gameId)  { return gameData(gameId).status == 'lobby'; }
+    function isActive(gameId) { return gameData(gameId).status == 'active'; }
+    function isHost(gameId)   { return request.auth.uid == gameData(gameId).hostId; }
 
     // ─── Games ─────────────────────────────────────────────────────────────────
 
     match /games/{gameId} {
 
-      // Anyone who knows the gameId can read (needed for real-time listeners)
       allow read: if true;
 
-      // Creating a game: must supply the required fields with valid values
       allow create: if
-        request.resource.data.keys().hasAll([
-          'code', 'status', 'hostId', 'hostNickname',
-          'gridSize', 'winnerId', 'winnerNickname', 'createdAt'
-        ])
+        request.auth != null
+        && request.auth.uid == request.resource.data.hostId
+        && request.resource.data.keys().hasAll([
+            'code', 'status', 'hostId', 'hostNickname',
+            'gridSize', 'winnerId', 'winnerNickname', 'createdAt'
+          ])
         && request.resource.data.status == 'lobby'
         && request.resource.data.gridSize in [3, 4, 5]
         && request.resource.data.winnerId == null
         && request.resource.data.winnerNickname == null;
 
-      // Updating a game: only allowed while not yet finished
-      allow update: if resource.data.status != 'finished';
+      allow update: if
+        request.auth != null
+        && resource.data.status != 'finished'
+        && (
+          // Host starts the game (lobby → active)
+          (request.resource.data.status == 'active' && isHost(gameId))
+          ||
+          // Winning player announces the win (active → finished)
+          (request.resource.data.status == 'finished'
+            && request.auth.uid == request.resource.data.winnerId)
+        );
 
       allow delete: if false;
 
@@ -43,15 +49,21 @@ service cloud.firestore {
       match /players/{playerId} {
         allow read: if true;
 
-        // Can only join while the game is still in the lobby
-        allow create: if isLobby(gameId)
+        // UID must match the document ID — you can only add yourself
+        allow create: if
+          request.auth != null
+          && request.auth.uid == playerId
+          && isLobby(gameId)
           && request.resource.data.keys().hasAll(['nickname', 'predictionsSubmitted', 'joinedAt'])
           && request.resource.data.predictionsSubmitted == false
           && request.resource.data.nickname.size() > 0
           && request.resource.data.nickname.size() <= 20;
 
-        // Only allowed field to update is predictionsSubmitted (flipping to true)
-        allow update: if isLobby(gameId)
+        // Only allowed change: flipping predictionsSubmitted to true
+        allow update: if
+          request.auth != null
+          && request.auth.uid == playerId
+          && isLobby(gameId)
           && request.resource.data.predictionsSubmitted == true
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['predictionsSubmitted']);
 
@@ -63,12 +75,13 @@ service cloud.firestore {
       match /predictions/{predictionId} {
         allow read: if true;
 
-        // Predictions can only be submitted while the game is in the lobby
-        allow create: if isLobby(gameId)
+        allow create: if
+          request.auth != null
+          && request.auth.uid == request.resource.data.authorId
+          && isLobby(gameId)
           && request.resource.data.keys().hasAll(['authorId', 'subjectId', 'text', 'createdAt'])
           && request.resource.data.text.size() > 0
           && request.resource.data.text.size() <= 120
-          // Subject and author must differ (can't predict about yourself)
           && request.resource.data.authorId != request.resource.data.subjectId;
 
         allow update: if false;
@@ -80,9 +93,11 @@ service cloud.firestore {
       match /cards/{playerId} {
         allow read: if true;
 
-        // Cards are written by the host client just before flipping status to active.
-        // We allow writes while the game is still in the lobby (that's when startGame runs).
-        allow create: if isLobby(gameId)
+        // Only the host generates cards, just before flipping status to active
+        allow create: if
+          request.auth != null
+          && isHost(gameId)
+          && isLobby(gameId)
           && request.resource.data.keys().hasAll(['grid'])
           && request.resource.data.grid is list;
 
@@ -95,8 +110,11 @@ service cloud.firestore {
       match /marks/{predictionId} {
         allow read: if true;
 
-        // Marks can only be created during an active game, and are permanent
-        allow create: if isActive(gameId)
+        // Any authenticated player can mark during an active game; marks are permanent
+        allow create: if
+          request.auth != null
+          && request.auth.uid == request.resource.data.markedBy
+          && isActive(gameId)
           && request.resource.data.keys().hasAll(['markedBy', 'markedByNickname', 'markedAt']);
 
         allow update: if false;
