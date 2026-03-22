@@ -11,42 +11,33 @@ import { useGameStore } from '../store/gameStore';
 import { registerForPushNotifications } from '../lib/notifications';
 import { savePushToken } from '../lib/firestore';
 
+async function waitForHydration(timeoutMs = 2000): Promise<void> {
+  if (useGameStore.persist.hasHydrated()) return;
+  return new Promise(resolve => {
+    const timer = setTimeout(resolve, timeoutMs);
+    const unsub = useGameStore.persist.onFinishHydration(() => {
+      clearTimeout(timer);
+      unsub();
+      resolve();
+    });
+  });
+}
+
 export default function RootLayout() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     const init = async () => {
-      // Wait for Zustand to finish hydrating from AsyncStorage before reading any values
-      await new Promise<void>(resolve => {
-        if (useGameStore.persist.hasHydrated()) {
-          resolve();
-        } else {
-          const unsub = useGameStore.persist.onFinishHydration(() => {
-            unsub();
-            resolve();
-          });
-        }
-      });
-
-      // Read directly from the store (not from the hook closure) so values are fresh
-      const { gameId, playerId, pushToken, setPushToken, reset } = useGameStore.getState();
+      await waitForHydration();
 
       try {
         await ensureSignedIn();
       } catch (err) {
-        console.error('Auth failed:', err);
         setReady(true);
         return;
       }
 
-      // Register for push notifications, update token if changed
-      const token = await registerForPushNotifications();
-      if (token && token !== pushToken) {
-        setPushToken(token);
-        if (gameId && playerId) {
-          savePushToken(gameId, playerId, token).catch(() => {});
-        }
-      }
+      const { gameId, reset } = useGameStore.getState();
 
       if (gameId) {
         try {
@@ -67,8 +58,8 @@ export default function RootLayout() {
               return;
             }
           }
-        } catch {
-          // Network error — can't verify game status, go home safely
+        } catch (err) {
+          // ignore, fall through to home
         }
         reset();
       }
@@ -79,13 +70,20 @@ export default function RootLayout() {
     init();
   }, []);
 
-  if (!ready) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-    );
-  }
+  // Register for push notifications separately — never blocks startup
+  useEffect(() => {
+    if (!ready) return;
+    registerForPushNotifications().then(token => {
+      if (!token) return;
+      const { pushToken, setPushToken, gameId, playerId } = useGameStore.getState();
+      if (token !== pushToken) {
+        setPushToken(token);
+        if (gameId && playerId) {
+          savePushToken(gameId, playerId, token).catch(() => {});
+        }
+      }
+    }).catch(() => {});
+  }, [ready]);
 
   return (
     <SafeAreaProvider>
@@ -97,6 +95,11 @@ export default function RootLayout() {
           animation: 'slide_from_right',
         }}
       />
+      {!ready && (
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      )}
     </SafeAreaProvider>
   );
 }
