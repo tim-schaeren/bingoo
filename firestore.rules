@@ -25,7 +25,7 @@ service cloud.firestore {
             'gridSize', 'winnerId', 'winnerNickname', 'createdAt'
           ])
         && request.resource.data.status == 'lobby'
-        && request.resource.data.gridSize in [3, 4, 5]
+        && request.resource.data.gridSize == 0
         && request.resource.data.winnerId == null;
 
       allow update: if

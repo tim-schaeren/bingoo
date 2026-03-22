@@ -12,7 +12,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { generateGameCode, generateId, generateCards } from './gameLogic';
+import { generateGameCode, generateId, generateCards, computeGridSize } from './gameLogic';
 import { currentUid } from './auth';
 
 export type GameStatus = 'lobby' | 'active' | 'finished';
@@ -54,8 +54,7 @@ export interface Mark {
 // ─── Create ───────────────────────────────────────────────────────────────────
 
 export async function createGame(
-  hostNickname: string,
-  gridSize: number
+  hostNickname: string
 ): Promise<{ gameId: string; playerId: string }> {
   const gameId = generateId();
   const playerId = currentUid();
@@ -66,7 +65,7 @@ export async function createGame(
     status: 'lobby',
     hostId: playerId,
     hostNickname,
-    gridSize,
+    gridSize: 0, // computed when the game starts
     winnerId: null,
     winnerNickname: null,
     createdAt: serverTimestamp(),
@@ -130,15 +129,15 @@ export async function submitPredictions(
 export async function startGame(
   gameId: string,
   players: Player[],
-  predictions: Prediction[],
-  gridSize: number
+  predictions: Prediction[]
 ): Promise<void> {
+  const gridSize = computeGridSize(players, predictions);
   const cards = generateCards(players, predictions, gridSize);
   const cardWrites = Object.entries(cards).map(([playerId, grid]) =>
     setDoc(doc(db, 'games', gameId, 'cards', playerId), { grid })
   );
   await Promise.all(cardWrites);
-  await updateDoc(doc(db, 'games', gameId), { status: 'active' });
+  await updateDoc(doc(db, 'games', gameId), { status: 'active', gridSize });
 }
 
 // ─── Marking ──────────────────────────────────────────────────────────────────

@@ -8,8 +8,26 @@ export function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
+// Compute grid size from the predictions each player will see.
+// Each player's card = all predictions where subjectId != their id.
+// With N players each writing 1 prediction per other player, every card
+// has (N-1)² predictions — a perfect square, giving a clean NxN grid.
+export function computeGridSize(
+  players: { id: string }[],
+  predictions: { subjectId: string }[]
+): number {
+  if (players.length < 2) return 2;
+  const minVisible = players.reduce((min, player) => {
+    const count = predictions.filter(p => p.subjectId !== player.id).length;
+    return Math.min(min, count);
+  }, Infinity);
+  const n = Math.floor(Math.sqrt(minVisible === Infinity ? 0 : minVisible));
+  return Math.max(2, Math.min(5, n)); // clamp: 2×2 minimum, 5×5 maximum
+}
+
 // Generate bingo cards for all players.
-// Each player's card contains shuffled predictions made about them by others.
+// Each player's card shows all predictions EXCEPT those made about themselves —
+// they can observe others but can't see what's coming for them.
 // Returns a map of playerId → flat array of predictionIds (length = gridSize²).
 export function generateCards(
   players: { id: string }[],
@@ -20,8 +38,8 @@ export function generateCards(
   const cards: Record<string, string[]> = {};
 
   for (const player of players) {
-    const aboutPlayer = predictions.filter(p => p.subjectId === player.id);
-    const shuffled = shuffle(aboutPlayer);
+    const visible = predictions.filter(p => p.subjectId !== player.id);
+    const shuffled = shuffle(visible);
     cards[player.id] = shuffled.slice(0, totalCells).map(p => p.id);
   }
 
@@ -44,36 +62,21 @@ export function getWinningLine(
   gridSize: number
 ): number[] | null {
   const isMarked = (i: number) => markedIds.has(grid[i]);
-  const indices = (arr: number[]) => arr;
 
-  // Rows
   for (let r = 0; r < gridSize; r++) {
     const row = Array.from({ length: gridSize }, (_, c) => r * gridSize + c);
-    if (row.every(isMarked)) return indices(row);
+    if (row.every(isMarked)) return row;
   }
-
-  // Columns
   for (let c = 0; c < gridSize; c++) {
     const col = Array.from({ length: gridSize }, (_, r) => r * gridSize + c);
-    if (col.every(isMarked)) return indices(col);
+    if (col.every(isMarked)) return col;
   }
-
-  // Top-left to bottom-right diagonal
   const diag1 = Array.from({ length: gridSize }, (_, i) => i * gridSize + i);
-  if (diag1.every(isMarked)) return indices(diag1);
-
-  // Top-right to bottom-left diagonal
+  if (diag1.every(isMarked)) return diag1;
   const diag2 = Array.from({ length: gridSize }, (_, i) => i * gridSize + (gridSize - 1 - i));
-  if (diag2.every(isMarked)) return indices(diag2);
+  if (diag2.every(isMarked)) return diag2;
 
   return null;
-}
-
-// How many predictions about each player are needed to fill the grid.
-export function requiredPredictionsPerPlayer(gridSize: number, playerCount: number): number {
-  const totalCells = gridSize * gridSize;
-  const contributors = playerCount - 1; // everyone except the subject writes about them
-  return Math.ceil(totalCells / contributors);
 }
 
 // Short alphanumeric game code

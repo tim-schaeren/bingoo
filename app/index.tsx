@@ -17,12 +17,10 @@ import { createGame, getGameByCode, joinGame } from '../lib/firestore';
 import { useGameStore } from '../store/gameStore';
 
 type Mode = 'home' | 'create' | 'join';
-type GridSize = 3 | 4 | 5;
 
 export default function HomeScreen() {
 	const [mode, setMode] = useState<Mode>('home');
 	const [nickname, setNickname] = useState('');
-	const [gridSize, setGridSize] = useState<GridSize>(4);
 	const [joinCode, setJoinCode] = useState('');
 	const [loading, setLoading] = useState(false);
 
@@ -38,7 +36,7 @@ export default function HomeScreen() {
 		}
 		setLoading(true);
 		try {
-			const { gameId, playerId } = await createGame(nickname.trim(), gridSize);
+			const { gameId, playerId } = await createGame(nickname.trim());
 			setSession(playerId, nickname.trim(), gameId, true);
 			router.replace(`/game/${gameId}/lobby`);
 		} catch {
@@ -138,33 +136,10 @@ export default function HomeScreen() {
 								autoFocus
 							/>
 
-							<Text style={styles.label}>Grid size</Text>
-							<View style={styles.gridSizeRow}>
-								{([3, 4, 5] as GridSize[]).map((size) => (
-									<TouchableOpacity
-										key={size}
-										style={[
-											styles.sizeChip,
-											gridSize === size && styles.sizeChipActive,
-										]}
-										onPress={() => setGridSize(size)}
-									>
-										<Text
-											style={[
-												styles.sizeChipText,
-												gridSize === size && styles.sizeChipTextActive,
-											]}
-										>
-											{size}×{size}
-										</Text>
-									</TouchableOpacity>
-								))}
-							</View>
 							<Text style={styles.hint}>
-								{gridSize}×{gridSize} = {gridSize * gridSize} predictions needed
-								per player.
-								{'\n'}Each player writes about every other player.
-							</Text>
+							Grid size is set automatically based on player count.{'\n'}
+							Each player writes at least 1 prediction about every other player.
+						</Text>
 
 							<TouchableOpacity
 								style={[styles.primaryButton, loading && styles.buttonDisabled]}
@@ -281,26 +256,6 @@ const styles = StyleSheet.create({
 		fontWeight: '700',
 		textAlign: 'center',
 	},
-	gridSizeRow: { flexDirection: 'row', gap: spacing.sm },
-	sizeChip: {
-		flex: 1,
-		paddingVertical: spacing.md,
-		borderRadius: radius.md,
-		borderWidth: 1.5,
-		borderColor: colors.border,
-		backgroundColor: colors.surface,
-		alignItems: 'center',
-	},
-	sizeChipActive: {
-		backgroundColor: colors.primary,
-		borderColor: colors.primary,
-	},
-	sizeChipText: {
-		fontSize: fontSize.md,
-		fontWeight: '600',
-		color: colors.textLight,
-	},
-	sizeChipTextActive: { color: '#fff' },
 	hint: {
 		fontSize: fontSize.sm,
 		color: colors.textLight,

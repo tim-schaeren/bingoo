@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -21,12 +21,9 @@ import {
   startGame,
   Player,
   Prediction,
-  Game,
 } from '../../../lib/firestore';
-import { requiredPredictionsPerPlayer } from '../../../lib/gameLogic';
 import { useGameStore } from '../../../store/gameStore';
 
-// Prediction inputs keyed by subjectId: string[]
 type PredictionDraft = Record<string, string[]>;
 
 export default function LobbyScreen() {
@@ -42,7 +39,6 @@ export default function LobbyScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [starting, setStarting] = useState(false);
 
-  // Set up Firestore listeners
   useEffect(() => {
     if (!gameId) return;
     const unsubs = [
@@ -56,13 +52,13 @@ export default function LobbyScreen() {
     return () => unsubs.forEach(u => u());
   }, [gameId]);
 
-  // Check if current player already submitted (e.g. after reconnect)
+  // Restore submitted state on reconnect
   useEffect(() => {
     const me = players.find(p => p.id === playerId);
     if (me?.predictionsSubmitted) setSubmitted(true);
   }, [players, playerId]);
 
-  // Initialise draft entries when player list loads
+  // Initialise draft inputs when new players join
   useEffect(() => {
     if (!playerId) return;
     const others = players.filter(p => p.id !== playerId);
@@ -77,16 +73,10 @@ export default function LobbyScreen() {
 
   const otherPlayers = players.filter(p => p.id !== playerId);
   const allSubmitted = players.length > 1 && players.every(p => p.predictionsSubmitted);
-  const requiredPerPerson = game
-    ? requiredPredictionsPerPlayer(game.gridSize, players.length)
-    : 1;
-
-  const inviteLink = `bingoo://join/${game?.code}`;
 
   const handleShare = () => {
     Share.share({
-      message: `Join my bingoo game! Code: ${game?.code}\n${inviteLink}`,
-      title: 'Join my bingoo game',
+      message: `Join my bingoo game!\nCode: ${game?.code}\nbingoo://join/${game?.code}`,
     });
   };
 
@@ -108,7 +98,7 @@ export default function LobbyScreen() {
   const removePrediction = (subjectId: string, index: number) => {
     setDraft(prev => {
       const arr = [...(prev[subjectId] ?? [''])];
-      if (arr.length === 1) return prev; // keep at least one input
+      if (arr.length === 1) return prev;
       arr.splice(index, 1);
       return { ...prev, [subjectId]: arr };
     });
@@ -117,14 +107,10 @@ export default function LobbyScreen() {
   const handleSubmit = async () => {
     if (!playerId || !gameId) return;
 
-    // Validate: at least one non-empty prediction per player
     for (const player of otherPlayers) {
       const texts = (draft[player.id] ?? ['']).filter(t => t.trim());
       if (texts.length === 0) {
-        Alert.alert(
-          'Missing predictions',
-          `You need at least one prediction about ${player.nickname}.`
-        );
+        Alert.alert('Missing prediction', `You need at least one prediction about ${player.nickname}.`);
         return;
       }
     }
@@ -152,7 +138,7 @@ export default function LobbyScreen() {
     if (!allSubmitted) {
       Alert.alert(
         'Not everyone is ready',
-        'Some players haven\'t submitted their predictions yet. Start anyway?',
+        "Some players haven't submitted their predictions yet. Start anyway?",
         [
           { text: 'Wait', style: 'cancel' },
           { text: 'Start anyway', onPress: doStartGame },
@@ -165,24 +151,10 @@ export default function LobbyScreen() {
   };
 
   const doStartGame = async () => {
-    if (!gameId || !game) return;
-
-    const totalCells = game.gridSize * game.gridSize;
-    // Check if each player will have enough predictions
-    for (const player of players) {
-      const count = predictions.filter(p => p.subjectId === player.id).length;
-      if (count < totalCells) {
-        Alert.alert(
-          'Not enough predictions',
-          `${player.nickname} only has ${count} predictions, but the ${game.gridSize}×${game.gridSize} grid needs ${totalCells}. Add more predictions or choose a smaller grid.`
-        );
-        return;
-      }
-    }
-
+    if (!gameId) return;
     setStarting(true);
     try {
-      await startGame(gameId, players, predictions, game.gridSize);
+      await startGame(gameId, players, predictions);
     } catch {
       Alert.alert('Error', 'Could not start game. Try again.');
       setStarting(false);
@@ -208,7 +180,7 @@ export default function LobbyScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Players list */}
+        {/* Players */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Players ({players.length})</Text>
           {players.map(p => (
@@ -224,7 +196,7 @@ export default function LobbyScreen() {
             </View>
           ))}
           <Text style={styles.hint}>
-            Grid: {game.gridSize}×{game.gridSize} — each player needs ~{requiredPerPerson} predictions per friend.
+            At least 1 prediction about each other player. Grid size is calculated automatically.
           </Text>
         </View>
 
@@ -236,7 +208,7 @@ export default function LobbyScreen() {
               {allSubmitted
                 ? isHost
                   ? 'Everyone is ready. You can start the game.'
-                  : 'Everyone is ready. Waiting for the host to start.'
+                  : 'Everyone is ready. Waiting for the host to start…'
                 : 'Waiting for others to finish their predictions…'}
             </Text>
             {isHost && (
@@ -255,7 +227,7 @@ export default function LobbyScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Your predictions</Text>
             <Text style={styles.sectionSubtitle}>
-              Write at least {requiredPerPerson} prediction{requiredPerPerson > 1 ? 's' : ''} about each friend.
+              Write at least 1 prediction about each friend. Add more for a bigger grid!
             </Text>
 
             {otherPlayers.length === 0 && (
@@ -286,10 +258,7 @@ export default function LobbyScreen() {
                     )}
                   </View>
                 ))}
-                <TouchableOpacity
-                  style={styles.addButton}
-                  onPress={() => addPrediction(player.id)}
-                >
+                <TouchableOpacity style={styles.addButton} onPress={() => addPrediction(player.id)}>
                   <Text style={styles.addButtonText}>+ Add another</Text>
                 </TouchableOpacity>
               </View>
@@ -317,17 +286,8 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   container: { padding: spacing.lg, gap: spacing.lg },
 
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  gameCode: {
-    fontSize: fontSize.xl,
-    fontWeight: '900',
-    color: colors.primary,
-    letterSpacing: 3,
-  },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  gameCode: { fontSize: fontSize.xl, fontWeight: '900', color: colors.primary, letterSpacing: 3 },
   shareButton: {
     backgroundColor: colors.primaryLight,
     borderRadius: radius.full,
