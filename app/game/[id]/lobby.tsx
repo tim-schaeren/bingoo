@@ -30,6 +30,7 @@ import {
 } from '../../../lib/firestore';
 import { useGameStore } from '../../../store/gameStore';
 import { sendPushNotifications } from '../../../lib/notifications';
+import { feedbackDone, feedbackStart } from '../../../lib/feedback';
 
 export default function LobbyScreen() {
 	const { id: gameId } = useLocalSearchParams<{ id: string }>();
@@ -133,6 +134,7 @@ export default function LobbyScreen() {
 
 	const handleMarkDone = async () => {
 		if (!playerId || !gameId) return;
+		feedbackDone();
 		setMarkingDone(true);
 		try {
 			await markPlayerDone(gameId, playerId);
@@ -187,6 +189,7 @@ export default function LobbyScreen() {
 
 	const doStartGame = async () => {
 		if (!gameId) return;
+		feedbackStart();
 		setStarting(true);
 		try {
 			await startGame(gameId, players, predictions);

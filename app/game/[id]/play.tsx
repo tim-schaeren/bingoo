@@ -25,6 +25,7 @@ import {
 import { getWinningLine } from '../../../lib/gameLogic';
 import { useGameStore } from '../../../store/gameStore';
 import { sendPushNotifications } from '../../../lib/notifications';
+import { feedbackMark, feedbackWin, feedbackSelection } from '../../../lib/feedback';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const GRID_PADDING = spacing.lg * 2;
@@ -101,7 +102,7 @@ export default function PlayScreen() {
 			const line = getWinningLine(grid, markedSet, gridSize);
 			if (!line) return;
 			announcedWinners.current.add(pid);
-			if (pid === playerId) setWinningLine(line);
+			if (pid === playerId) { setWinningLine(line); feedbackWin(); }
 			const winner = players.find((p) => p.id === pid);
 			const winnerNickname = winner?.nickname ?? 'Someone';
 			announceWinner(gameId, pid, winnerNickname)
@@ -135,6 +136,7 @@ export default function PlayScreen() {
 
 	const doMarkPrediction = (predictionId: string) => {
 		if (!gameId || !playerId || !nickname) return;
+		feedbackMark();
 		const pred = getPrediction(predictionId);
 		markPrediction(gameId, predictionId, playerId, nickname)
 			.then(() => {
@@ -199,7 +201,7 @@ export default function PlayScreen() {
 									isMarked && styles.cellMarked,
 									isWinCell && styles.cellWin,
 								]}
-								onPress={() => setSelectedPredId(predictionId)}
+								onPress={() => { feedbackSelection(); setSelectedPredId(predictionId); }}
 								activeOpacity={0.7}
 							>
 								<Text
