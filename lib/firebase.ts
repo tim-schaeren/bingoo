@@ -1,8 +1,12 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
-// @ts-ignore — getReactNativePersistence is exported from the React Native bundle
-// (dist/rn/index.js via package.json "react-native" field) but missing from TS types
-import { initializeAuth, getReactNativePersistence, getAuth } from 'firebase/auth';
+// Import directly from @firebase/auth so Metro uses its "react-native" field
+// in package.json, which resolves to dist/rn/index.js — the only bundle that
+// exports getReactNativePersistence. Importing from 'firebase/auth' instead
+// would hit the browser bundle (no react-native field in the firebase wrapper).
+// @ts-ignore — types don't declare getReactNativePersistence but Metro resolves
+// @firebase/auth to dist/rn/index.js (via "react-native" in package.json) which exports it
+import { initializeAuth, getReactNativePersistence, getAuth } from '@firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 
