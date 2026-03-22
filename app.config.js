@@ -15,6 +15,7 @@ export default {
     ios: {
       supportsTablet: false,
       bundleIdentifier: 'com.bingoo.app',
+      buildNumber: '2',
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
       },
