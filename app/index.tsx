@@ -26,6 +26,7 @@ export default function HomeScreen() {
 	const [loading, setLoading] = useState(false);
 
 	const setSession = useGameStore((s) => s.setSession);
+	const pushToken = useGameStore((s) => s.pushToken);
 
 	const handleCreate = async () => {
 		if (!nickname.trim()) {
@@ -37,7 +38,7 @@ export default function HomeScreen() {
 		}
 		setLoading(true);
 		try {
-			const { gameId, playerId } = await createGame(nickname.trim());
+			const { gameId, playerId } = await createGame(nickname.trim(), pushToken);
 			setSession(playerId, nickname.trim(), gameId, true);
 			router.replace(`/game/${gameId}/lobby`);
 		} catch {
@@ -76,7 +77,7 @@ export default function HomeScreen() {
 				);
 				return;
 			}
-			const { playerId } = await joinGame(game.id, nickname.trim());
+			const { playerId } = await joinGame(game.id, nickname.trim(), pushToken);
 			setSession(playerId, nickname.trim(), game.id, false);
 			router.replace(`/game/${game.id}/lobby`);
 		} catch {

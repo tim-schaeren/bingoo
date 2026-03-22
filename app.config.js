@@ -18,7 +18,9 @@ export default {
       buildNumber: '5',
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
+        NSUserNotificationsUsageDescription: 'bingoo notifies you when a prediction is marked, the game starts, or someone wins.',
       },
+      plugins: [['expo-notifications', { icon: './assets/icon.png', color: '#6C3CE2' }]],
     },
     android: {
       package: 'com.bingoo.app',

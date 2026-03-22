@@ -24,6 +24,7 @@ import {
 } from '../../../lib/firestore';
 import { getWinningLine } from '../../../lib/gameLogic';
 import { useGameStore } from '../../../store/gameStore';
+import { sendPushNotifications } from '../../../lib/notifications';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const GRID_PADDING = spacing.lg * 2;
@@ -74,7 +75,10 @@ export default function PlayScreen() {
     const line = getWinningLine(myCard, markedSet, gridSize);
     if (line && !winningLine) {
       setWinningLine(line);
-      announceWinner(gameId, playerId, nickname ?? 'Someone').catch(() => {});
+      announceWinner(gameId, playerId, nickname ?? 'Someone').then(() => {
+        const tokens = players.filter(p => p.id !== playerId).map(p => p.pushToken);
+        sendPushNotifications(tokens, 'BINGOO! 🎉', `${nickname ?? 'Someone'} won!`);
+      }).catch(() => {});
     }
   }, [marks, myCard]);
 
@@ -100,7 +104,15 @@ export default function PlayScreen() {
 
   const doMarkPrediction = (predictionId: string) => {
     if (!gameId || !playerId || !nickname) return;
-    markPrediction(gameId, predictionId, playerId, nickname).catch(() => {
+    const pred = getPrediction(predictionId);
+    markPrediction(gameId, predictionId, playerId, nickname).then(() => {
+      // Notify everyone except the marker and the subject of the prediction
+      const tokens = players
+        .filter(p => p.id !== playerId && p.id !== pred?.subjectId)
+        .map(p => p.pushToken);
+      const predText = pred?.text ?? '';
+      sendPushNotifications(tokens, 'prediction marked ✓', `${nickname}: "${predText}"`);
+    }).catch(() => {
       Alert.alert('Error', 'Could not mark this prediction. Try again.');
     });
     setSelectedPredId(null);

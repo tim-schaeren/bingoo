@@ -40,6 +40,7 @@ export interface Player {
   nickname: string;
   predictionsSubmitted: boolean;
   joinedAt: Timestamp;
+  pushToken?: string | null;
 }
 
 export interface Prediction {
@@ -60,7 +61,8 @@ export interface Mark {
 // ─── Create ───────────────────────────────────────────────────────────────────
 
 export async function createGame(
-  hostNickname: string
+  hostNickname: string,
+  pushToken?: string | null,
 ): Promise<{ gameId: string; playerId: string }> {
   const gameId = generateId();
   const playerId = currentUid();
@@ -80,6 +82,7 @@ export async function createGame(
     nickname: hostNickname,
     predictionsSubmitted: false,
     joinedAt: serverTimestamp(),
+    ...(pushToken ? { pushToken } : {}),
   });
 
   return { gameId, playerId };
@@ -97,13 +100,15 @@ export async function getGameByCode(code: string): Promise<Game | null> {
 
 export async function joinGame(
   gameId: string,
-  nickname: string
+  nickname: string,
+  pushToken?: string | null,
 ): Promise<{ playerId: string }> {
   const playerId = currentUid();
   await setDoc(doc(db, 'games', gameId, 'players', playerId), {
     nickname,
     predictionsSubmitted: false,
     joinedAt: serverTimestamp(),
+    ...(pushToken ? { pushToken } : {}),
   });
   return { playerId };
 }
@@ -214,6 +219,16 @@ export function listenToMarks(gameId: string, callback: (marks: Mark[]) => void)
   return onSnapshot(collection(db, 'games', gameId, 'marks'), snap => {
     callback(snap.docs.map(d => ({ predictionId: d.id, ...d.data() }) as Mark));
   });
+}
+
+// ─── Push token ───────────────────────────────────────────────────────────────
+
+export async function savePushToken(
+  gameId: string,
+  playerId: string,
+  pushToken: string,
+): Promise<void> {
+  await updateDoc(doc(db, 'games', gameId, 'players', playerId), { pushToken });
 }
 
 // ─── Lobby management ────────────────────────────────────────────────────────

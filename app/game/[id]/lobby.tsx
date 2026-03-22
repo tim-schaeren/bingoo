@@ -29,6 +29,7 @@ import {
 	leaveGame,
 } from '../../../lib/firestore';
 import { useGameStore } from '../../../store/gameStore';
+import { sendPushNotifications } from '../../../lib/notifications';
 
 export default function LobbyScreen() {
 	const { id: gameId } = useLocalSearchParams<{ id: string }>();
@@ -189,6 +190,8 @@ export default function LobbyScreen() {
 		setStarting(true);
 		try {
 			await startGame(gameId, players, predictions);
+			const tokens = players.filter(p => p.id !== playerId).map(p => p.pushToken);
+			sendPushNotifications(tokens, 'game started! 🎰', 'Check your bingo card.');
 		} catch {
 			Alert.alert('Error', 'Could not start game. Try again.');
 			setStarting(false);

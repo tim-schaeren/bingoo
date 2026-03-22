@@ -59,13 +59,17 @@ service cloud.firestore {
 
         allow update: if
           request.auth != null
-          && isLobby(gameId)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['predictionsSubmitted'])
           && (
-            // Player submits their own predictions
-            request.auth.uid == playerId
-            // Host resets any player back to unsubmitted
-            || (isHost(gameId) && request.resource.data.predictionsSubmitted == false)
+            // Player updates their own push token (any game state)
+            (request.auth.uid == playerId
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pushToken']))
+            // Player submits/retracts their own predictions (lobby only)
+            || (isLobby(gameId)
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['predictionsSubmitted'])
+              && (
+                request.auth.uid == playerId
+                || (isHost(gameId) && request.resource.data.predictionsSubmitted == false)
+              ))
           );
 
         allow delete: if

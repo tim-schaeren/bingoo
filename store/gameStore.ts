@@ -9,6 +9,7 @@ interface GameState {
   nickname: string | null;
   gameId: string | null;
   isHost: boolean;
+  pushToken: string | null;
 
   // Live game data (populated by Firestore listeners — not persisted)
   game: Game | null;
@@ -18,6 +19,7 @@ interface GameState {
   myCard: string[] | null; // flat array of predictionIds, length = gridSize²
 
   // Actions
+  setPushToken: (token: string | null) => void;
   setSession: (playerId: string, nickname: string, gameId: string, isHost: boolean) => void;
   setGame: (game: Game) => void;
   setPlayers: (players: Player[]) => void;
@@ -34,12 +36,14 @@ export const useGameStore = create<GameState>()(
       nickname: null,
       gameId: null,
       isHost: false,
+      pushToken: null,
       game: null,
       players: [],
       predictions: [],
       marks: [],
       myCard: null,
 
+      setPushToken: token => set({ pushToken: token }),
       setSession: (playerId, nickname, gameId, isHost) =>
         set({ playerId, nickname, gameId, isHost }),
       setGame: game => set({ game }),
@@ -53,6 +57,7 @@ export const useGameStore = create<GameState>()(
           nickname: null,
           gameId: null,
           isHost: false,
+          pushToken: null,
           game: null,
           players: [],
           predictions: [],
@@ -69,6 +74,7 @@ export const useGameStore = create<GameState>()(
         nickname: state.nickname,
         gameId: state.gameId,
         isHost: state.isHost,
+        pushToken: state.pushToken,
       }),
     }
   )
