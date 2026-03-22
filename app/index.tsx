@@ -10,23 +10,66 @@ import {
 	KeyboardAvoidingView,
 	Platform,
 	Image,
+	ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { getDoc, doc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import { colors, spacing, radius, fontSize } from '../constants/theme';
 import { createGame, getGameByCode, joinGame } from '../lib/firestore';
 import { useGameStore } from '../store/gameStore';
 
 type Mode = 'home' | 'create' | 'join';
 
+const RULES = [
+	{
+		emoji: '✍️',
+		text: 'Everyone writes predictions about each other — things you think will become true.',
+	},
+	{
+		emoji: '🃏',
+		text: 'When the host starts the game, everyone gets a random bingoo card filled with predictions about the other players.',
+	},
+	{
+		emoji: '✓',
+		text: 'Once a prediction comes true, mark it on the bingoo card. It will also be marked for everyone else.',
+	},
+	{
+		emoji: '🎉',
+		text: 'First player to complete a row, column, or diagonal wins!',
+	},
+];
+
 export default function HomeScreen() {
 	const [mode, setMode] = useState<Mode>('home');
 	const [nickname, setNickname] = useState('');
 	const [joinCode, setJoinCode] = useState('');
 	const [loading, setLoading] = useState(false);
+	const [rulesOpen, setRulesOpen] = useState(false);
 
-	const setSession = useGameStore((s) => s.setSession);
-	const pushToken = useGameStore((s) => s.pushToken);
+	const { setSession, pushToken, gameId, reset } = useGameStore();
+
+	const handleContinue = async () => {
+		if (!gameId) return;
+		setLoading(true);
+		try {
+			const snap = await getDoc(doc(db, 'games', gameId));
+			if (!snap.exists() || snap.data().status === 'cancelled') {
+				reset();
+				return;
+			}
+			const status = snap.data().status;
+			if (status === 'lobby') router.replace(`/game/${gameId}/lobby`);
+			else if (status === 'active') router.replace(`/game/${gameId}/play`);
+			else if (status === 'finished') router.replace(`/game/${gameId}/winner`);
+			else reset();
+		} catch {
+			Alert.alert('Error', 'Could not resume game. Check your connection.');
+		} finally {
+			setLoading(false);
+		}
+	};
 
 	const handleCreate = async () => {
 		if (!nickname.trim()) {
@@ -38,9 +81,12 @@ export default function HomeScreen() {
 		}
 		setLoading(true);
 		try {
-			const { gameId, playerId } = await createGame(nickname.trim(), pushToken);
-			setSession(playerId, nickname.trim(), gameId, true);
-			router.replace(`/game/${gameId}/lobby`);
+			const { gameId: newGameId, playerId } = await createGame(
+				nickname.trim(),
+				pushToken,
+			);
+			setSession(playerId, nickname.trim(), newGameId, true);
+			router.replace(`/game/${newGameId}/lobby`);
 		} catch {
 			Alert.alert(
 				'Error',
@@ -112,18 +158,72 @@ export default function HomeScreen() {
 
 					{mode === 'home' && (
 						<View style={styles.actions}>
-							<TouchableOpacity
-								style={styles.primaryButton}
-								onPress={() => setMode('create')}
-							>
-								<Text style={styles.primaryButtonText}>create</Text>
-							</TouchableOpacity>
-							<TouchableOpacity
-								style={styles.secondaryButton}
-								onPress={() => setMode('join')}
-							>
-								<Text style={styles.secondaryButtonText}>join</Text>
-							</TouchableOpacity>
+							{gameId ? (
+								<>
+									<TouchableOpacity
+										style={[
+											styles.primaryButton,
+											loading && styles.buttonDisabled,
+										]}
+										onPress={handleContinue}
+										disabled={loading}
+									>
+										{loading ? (
+											<ActivityIndicator color="#fff" />
+										) : (
+											<Text style={styles.primaryButtonText}>
+												continue game
+											</Text>
+										)}
+									</TouchableOpacity>
+									<TouchableOpacity
+										onPress={() =>
+											Alert.alert(
+												'Leave game?',
+												'You will permanently lose your spot in this game and cannot rejoin.',
+												[
+													{ text: 'Stay', style: 'cancel' },
+													{
+														text: 'Leave game',
+														style: 'destructive',
+														onPress: () =>
+															Alert.alert(
+																'Are you sure?',
+																'This cannot be undone.',
+																[
+																	{ text: 'Cancel', style: 'cancel' },
+																	{
+																		text: 'Yes, leave',
+																		style: 'destructive',
+																		onPress: reset,
+																	},
+																],
+															),
+													},
+												],
+											)
+										}
+										style={styles.backButton}
+									>
+										<Text style={styles.backButtonText}>leave game</Text>
+									</TouchableOpacity>
+								</>
+							) : (
+								<>
+									<TouchableOpacity
+										style={styles.primaryButton}
+										onPress={() => setMode('create')}
+									>
+										<Text style={styles.primaryButtonText}>create</Text>
+									</TouchableOpacity>
+									<TouchableOpacity
+										style={styles.secondaryButton}
+										onPress={() => setMode('join')}
+									>
+										<Text style={styles.secondaryButtonText}>join</Text>
+									</TouchableOpacity>
+								</>
+							)}
 						</View>
 					)}
 
@@ -201,6 +301,29 @@ export default function HomeScreen() {
 							</TouchableOpacity>
 						</View>
 					)}
+
+					{/* Rules accordion */}
+					{mode === 'home' && (
+						<View style={styles.rules}>
+							<TouchableOpacity
+								style={styles.rulesToggle}
+								onPress={() => setRulesOpen((o) => !o)}
+							>
+								<Text style={styles.rulesToggleText}>how to play</Text>
+								<Text style={styles.rulesChevron}>{rulesOpen ? '▲' : '▼'}</Text>
+							</TouchableOpacity>
+							{rulesOpen && (
+								<View style={styles.rulesList}>
+									{RULES.map((r, i) => (
+										<View key={i} style={styles.ruleRow}>
+											<Text style={styles.ruleEmoji}>{r.emoji}</Text>
+											<Text style={styles.ruleText}>{r.text}</Text>
+										</View>
+									))}
+								</View>
+							)}
+						</View>
+					)}
 				</ScrollView>
 			</KeyboardAvoidingView>
 		</SafeAreaView>
@@ -234,12 +357,6 @@ const styles = StyleSheet.create({
 	},
 	actions: { gap: spacing.md },
 	form: { gap: spacing.md },
-	formTitle: {
-		fontSize: fontSize.xl,
-		fontWeight: '700',
-		color: colors.text,
-		marginBottom: spacing.xs,
-	},
 	label: {
 		fontSize: fontSize.sm,
 		fontWeight: '600',
@@ -261,11 +378,6 @@ const styles = StyleSheet.create({
 		fontSize: fontSize.xl,
 		fontWeight: '700',
 		textAlign: 'center',
-	},
-	hint: {
-		fontSize: fontSize.sm,
-		color: colors.textLight,
-		lineHeight: 18,
 	},
 	primaryButton: {
 		backgroundColor: colors.primary,
@@ -299,4 +411,49 @@ const styles = StyleSheet.create({
 	backButton: { alignItems: 'center', padding: spacing.sm },
 	backButtonText: { color: colors.textLight, fontSize: fontSize.md },
 	buttonDisabled: { opacity: 0.6 },
+
+	rules: {
+		marginTop: spacing.xl,
+		borderRadius: radius.md,
+		borderWidth: 1,
+		borderColor: colors.border,
+		overflow: 'hidden',
+	},
+	rulesToggle: {
+		flexDirection: 'row',
+		justifyContent: 'space-between',
+		alignItems: 'center',
+		padding: spacing.md,
+		backgroundColor: colors.surface,
+	},
+	rulesToggleText: {
+		fontSize: fontSize.sm,
+		fontWeight: '700',
+		color: colors.text,
+		textTransform: 'uppercase',
+		letterSpacing: 0.5,
+	},
+	rulesChevron: {
+		fontSize: 10,
+		color: colors.textLight,
+	},
+	rulesList: {
+		padding: spacing.md,
+		gap: spacing.md,
+		backgroundColor: colors.surface,
+		borderTopWidth: 1,
+		borderTopColor: colors.border,
+	},
+	ruleRow: {
+		flexDirection: 'row',
+		gap: spacing.sm,
+		alignItems: 'flex-start',
+	},
+	ruleEmoji: { fontSize: 18, width: 28 },
+	ruleText: {
+		flex: 1,
+		fontSize: fontSize.sm,
+		color: colors.textLight,
+		lineHeight: 20,
+	},
 });

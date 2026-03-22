@@ -190,8 +190,14 @@ export default function LobbyScreen() {
 		setStarting(true);
 		try {
 			await startGame(gameId, players, predictions);
-			const tokens = players.filter(p => p.id !== playerId).map(p => p.pushToken);
-			sendPushNotifications(tokens, 'game started! 🎰', 'Check your bingo card.');
+			const tokens = players
+				.filter((p) => p.id !== playerId)
+				.map((p) => p.pushToken);
+			sendPushNotifications(
+				tokens,
+				'game started! 🎰',
+				'Check your bingoo card.',
+			);
 		} catch {
 			Alert.alert('Error', 'Could not start game. Try again.');
 			setStarting(false);
@@ -261,6 +267,9 @@ export default function LobbyScreen() {
 				>
 					{/* Header */}
 					<View style={styles.header}>
+						<TouchableOpacity onPress={() => router.replace('/')} style={styles.homeButton}>
+							<Text style={styles.homeButtonText}>⌂</Text>
+						</TouchableOpacity>
 						<Text style={styles.gameCode}>{game.code}</Text>
 						<TouchableOpacity style={styles.shareButton} onPress={handleShare}>
 							<Text style={styles.shareButtonText}>invite</Text>
@@ -759,6 +768,15 @@ const styles = StyleSheet.create({
 	welcomeShareText: { color: '#fff', fontWeight: '700', fontSize: fontSize.md },
 	welcomeDismiss: { color: colors.textLight, fontSize: fontSize.md },
 
+	homeButton: {
+		width: 36,
+		alignItems: 'flex-start',
+		justifyContent: 'center',
+	},
+	homeButtonText: {
+		fontSize: 20,
+		color: colors.textLight,
+	},
 	quitButton: {
 		alignItems: 'center',
 		paddingVertical: spacing.md,
