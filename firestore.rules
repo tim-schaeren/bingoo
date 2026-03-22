@@ -15,7 +15,6 @@ service cloud.firestore {
     // ─── Games ─────────────────────────────────────────────────────────────────
 
     match /games/{gameId} {
-
       allow read: if true;
 
       allow create: if
@@ -27,19 +26,15 @@ service cloud.firestore {
           ])
         && request.resource.data.status == 'lobby'
         && request.resource.data.gridSize in [3, 4, 5]
-        && request.resource.data.winnerId == null
-        && request.resource.data.winnerNickname == null;
+        && request.resource.data.winnerId == null;
 
       allow update: if
         request.auth != null
         && resource.data.status != 'finished'
         && (
-          // Host starts the game (lobby → active)
           (request.resource.data.status == 'active' && isHost(gameId))
-          ||
-          // Winning player announces the win (active → finished)
-          (request.resource.data.status == 'finished'
-            && request.auth.uid == request.resource.data.winnerId)
+          || (request.resource.data.status == 'finished'
+              && request.auth.uid == request.resource.data.winnerId)
         );
 
       allow delete: if false;
@@ -49,7 +44,6 @@ service cloud.firestore {
       match /players/{playerId} {
         allow read: if true;
 
-        // UID must match the document ID — you can only add yourself
         allow create: if
           request.auth != null
           && request.auth.uid == playerId
@@ -59,7 +53,6 @@ service cloud.firestore {
           && request.resource.data.nickname.size() > 0
           && request.resource.data.nickname.size() <= 20;
 
-        // Only allowed change: flipping predictionsSubmitted to true
         allow update: if
           request.auth != null
           && request.auth.uid == playerId
@@ -93,7 +86,6 @@ service cloud.firestore {
       match /cards/{playerId} {
         allow read: if true;
 
-        // Only the host generates cards, just before flipping status to active
         allow create: if
           request.auth != null
           && isHost(gameId)
@@ -110,7 +102,6 @@ service cloud.firestore {
       match /marks/{predictionId} {
         allow read: if true;
 
-        // Any authenticated player can mark during an active game; marks are permanent
         allow create: if
           request.auth != null
           && request.auth.uid == request.resource.data.markedBy

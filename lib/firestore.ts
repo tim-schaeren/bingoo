@@ -58,7 +58,7 @@ export async function createGame(
   gridSize: number
 ): Promise<{ gameId: string; playerId: string }> {
   const gameId = generateId();
-  const playerId = currentUid(); // Firebase anonymous auth UID
+  const playerId = currentUid();
   const code = generateGameCode();
 
   await setDoc(doc(db, 'games', gameId), {
@@ -95,7 +95,7 @@ export async function joinGame(
   gameId: string,
   nickname: string
 ): Promise<{ playerId: string }> {
-  const playerId = currentUid(); // Firebase anonymous auth UID
+  const playerId = currentUid();
   await setDoc(doc(db, 'games', gameId, 'players', playerId), {
     nickname,
     predictionsSubmitted: false,
