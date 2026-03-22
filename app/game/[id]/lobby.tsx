@@ -11,6 +11,7 @@ import {
 	ActivityIndicator,
 	KeyboardAvoidingView,
 	Platform,
+	Modal,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -45,6 +46,7 @@ export default function LobbyScreen() {
 	const [adding, setAdding] = useState(false);
 	const [markingDone, setMarkingDone] = useState(false);
 	const [starting, setStarting] = useState(false);
+	const [showWelcome, setShowWelcome] = useState(true);
 
 	const inputRef = useRef<TextInput>(null);
 
@@ -55,9 +57,13 @@ export default function LobbyScreen() {
 				setGame(g);
 				if (g.status === 'active') router.replace(`/game/${gameId}/play`);
 				if (g.status === 'cancelled') {
-					Alert.alert('Game cancelled', 'The host cancelled the game.', [
-						{ text: 'OK', onPress: () => router.replace('/') },
-					]);
+					if (isHost) {
+						router.replace('/');
+					} else {
+						Alert.alert('Game cancelled', 'The host cancelled the game.', [
+							{ text: 'OK', onPress: () => router.replace('/') },
+						]);
+					}
 				}
 			}),
 			listenToPlayers(gameId, setPlayers),
@@ -152,9 +158,10 @@ export default function LobbyScreen() {
 			{
 				text: 'Delete',
 				style: 'destructive',
-				onPress: () => deletePrediction(gameId, predictionId).catch(() => {
-					Alert.alert('Error', 'Could not delete. Try again.');
-				}),
+				onPress: () =>
+					deletePrediction(gameId, predictionId).catch(() => {
+						Alert.alert('Error', 'Could not delete. Try again.');
+					}),
 			},
 		]);
 	};
@@ -252,22 +259,9 @@ export default function LobbyScreen() {
 					{/* Header */}
 					<View style={styles.header}>
 						<Text style={styles.gameCode}>{game.code}</Text>
-						<View style={styles.headerActions}>
-							<TouchableOpacity
-								style={styles.shareButton}
-								onPress={handleShare}
-							>
-								<Text style={styles.shareButtonText}>invite</Text>
-							</TouchableOpacity>
-							<TouchableOpacity
-								style={styles.leaveButton}
-								onPress={isHost ? handleCancel : handleLeave}
-							>
-								<Text style={styles.leaveButtonText}>
-									{isHost ? 'Quit' : 'Leave'}
-								</Text>
-							</TouchableOpacity>
-						</View>
+						<TouchableOpacity style={styles.shareButton} onPress={handleShare}>
+							<Text style={styles.shareButtonText}>invite</Text>
+						</TouchableOpacity>
 					</View>
 
 					{/* Players */}
@@ -275,11 +269,19 @@ export default function LobbyScreen() {
 						<Text style={styles.sectionMeta}>{players.length} players</Text>
 						{players.map((p) => (
 							<View key={p.id} style={styles.playerRow}>
-								<Text style={styles.playerName}>
-									{p.nickname}
-									{p.id === playerId ? ' (you)' : ''}
-									{p.id === game.hostId ? ' · host' : ''}
-								</Text>
+								<View style={styles.playerNameRow}>
+									<Text style={styles.playerName}>{p.nickname}</Text>
+									{p.id === playerId && (
+										<View style={styles.pillYou}>
+											<Text style={styles.pillYouText}>you</Text>
+										</View>
+									)}
+									{p.id === game.hostId && (
+										<View style={styles.pillHost}>
+											<Text style={styles.pillHostText}>host</Text>
+										</View>
+									)}
+								</View>
 								<Text
 									style={[
 										styles.status,
@@ -293,23 +295,18 @@ export default function LobbyScreen() {
 					</View>
 
 					{/* Prediction pool */}
-					<View style={styles.section}>
-						<Text style={styles.sectionMeta}>
-							{visiblePredictions.length} predictions in pool
-						</Text>
-						{visiblePredictions.length === 0 ? (
-							<Text style={styles.hint}>
-								No predictions yet. Add the first one!
-							</Text>
-						) : (
-							visiblePredictions.map((p) => (
+					{visiblePredictions.length > 0 && (
+						<View style={styles.section}>
+							{visiblePredictions.map((p) => (
 								<View key={p.id} style={styles.poolItem}>
 									<View style={styles.poolItemHeader}>
 										<Text style={styles.poolAbout}>
 											about {getPlayerName(p.subjectId)}
 										</Text>
 										{p.authorId === playerId && !submitted && (
-											<TouchableOpacity onPress={() => handleDeletePrediction(p.id)}>
+											<TouchableOpacity
+												onPress={() => handleDeletePrediction(p.id)}
+											>
 												<Text style={styles.poolDelete}>✕</Text>
 											</TouchableOpacity>
 										)}
@@ -321,12 +318,16 @@ export default function LobbyScreen() {
 											: `by ${getPlayerName(p.authorId)}`}
 									</Text>
 								</View>
-							))
-						)}
-					</View>
+							))}
+						</View>
+					)}
 
 					{/* Add prediction form */}
-					{!submitted ? (
+					{otherPlayers.length === 0 ? (
+						<Text style={styles.waitingForPlayers}>
+							Share the code above to invite your friends!
+						</Text>
+					) : !submitted ? (
 						<View style={styles.section}>
 							{/* Subject chips */}
 							<ScrollView
@@ -446,6 +447,51 @@ export default function LobbyScreen() {
 					)}
 				</ScrollView>
 			</KeyboardAvoidingView>
+
+			{/* Welcome modal */}
+			<Modal
+				visible={showWelcome}
+				transparent
+				animationType="fade"
+				onRequestClose={() => setShowWelcome(false)}
+			>
+				<TouchableOpacity
+					style={styles.welcomeOverlay}
+					activeOpacity={1}
+					onPress={() => setShowWelcome(false)}
+				>
+					<TouchableOpacity style={styles.welcomeCard} activeOpacity={1}>
+						<Text style={styles.welcomeTitle}>all set! 🎉</Text>
+						<Text style={styles.welcomeCode}>{game.code}</Text>
+						<Text style={styles.welcomeHint}>
+							Share this code with your friends so they can join.
+						</Text>
+						<TouchableOpacity
+							style={styles.welcomeShare}
+							onPress={() => {
+								Share.share({
+									message: `Join my bingoo!\nCode: ${game?.code}\nbingoo://join/${game?.code}`,
+								}).then(() => setShowWelcome(false));
+							}}
+						>
+							<Text style={styles.welcomeShareText}>share</Text>
+						</TouchableOpacity>
+						<TouchableOpacity onPress={() => setShowWelcome(false)}>
+							<Text style={styles.welcomeDismiss}>got it</Text>
+						</TouchableOpacity>
+					</TouchableOpacity>
+				</TouchableOpacity>
+			</Modal>
+
+			{/* Fixed bottom quit/leave */}
+			<TouchableOpacity
+				style={styles.quitButton}
+				onPress={isHost ? handleCancel : handleLeave}
+			>
+				<Text style={styles.quitButtonText}>
+					{isHost ? 'cancel' : 'Leave game'}
+				</Text>
+			</TouchableOpacity>
 		</SafeAreaView>
 	);
 }
@@ -519,7 +565,26 @@ const styles = StyleSheet.create({
 		borderWidth: 1,
 		borderColor: colors.border,
 	},
+	playerNameRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: spacing.xs,
+	},
 	playerName: { fontSize: fontSize.md, color: colors.text, fontWeight: '500' },
+	pillYou: {
+		backgroundColor: colors.secondary,
+		borderRadius: radius.full,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: 2,
+	},
+	pillYouText: { fontSize: 11, fontWeight: '700', color: colors.text },
+	pillHost: {
+		backgroundColor: colors.primaryLight,
+		borderRadius: radius.full,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: 2,
+	},
+	pillHostText: { fontSize: 11, fontWeight: '700', color: colors.primary },
 	status: { fontSize: fontSize.sm, color: colors.textLight },
 	statusDone: { color: colors.success, fontWeight: '600' },
 
@@ -531,13 +596,21 @@ const styles = StyleSheet.create({
 		borderColor: colors.border,
 		gap: 2,
 	},
-	poolItemHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+	poolItemHeader: {
+		flexDirection: 'row',
+		justifyContent: 'space-between',
+		alignItems: 'center',
+	},
 	poolAbout: {
 		fontSize: fontSize.sm,
 		color: colors.primary,
 		fontWeight: '700',
 	},
-	poolDelete: { color: colors.textLight, fontSize: fontSize.md, paddingLeft: spacing.sm },
+	poolDelete: {
+		color: colors.textLight,
+		fontSize: fontSize.md,
+		paddingLeft: spacing.sm,
+	},
 	poolText: { fontSize: fontSize.md, color: colors.text },
 	poolAuthor: { fontSize: fontSize.sm, color: colors.textLight, marginTop: 2 },
 
@@ -584,6 +657,8 @@ const styles = StyleSheet.create({
 		borderRadius: radius.lg,
 		padding: spacing.md,
 		alignItems: 'center',
+		alignSelf: 'center',
+		minWidth: 220,
 		borderWidth: 1.5,
 		borderColor: colors.border,
 		marginTop: spacing.xs,
@@ -630,4 +705,66 @@ const styles = StyleSheet.create({
 	buttonDisabled: { opacity: 0.6 },
 	keepWritingButton: { paddingVertical: spacing.sm },
 	keepWritingText: { color: colors.textLight, fontSize: fontSize.sm },
+
+	waitingForPlayers: {
+		fontSize: fontSize.md,
+		color: colors.textLight,
+		textAlign: 'center',
+		fontStyle: 'italic',
+		paddingVertical: spacing.lg,
+	},
+
+	welcomeOverlay: {
+		flex: 1,
+		backgroundColor: 'rgba(0,0,0,0.5)',
+		justifyContent: 'center',
+		alignItems: 'center',
+		padding: spacing.lg,
+	},
+	welcomeCard: {
+		backgroundColor: colors.surface,
+		borderRadius: radius.lg,
+		padding: spacing.lg,
+		width: '100%',
+		alignItems: 'center',
+		gap: spacing.md,
+	},
+	welcomeTitle: {
+		fontSize: fontSize.lg,
+		fontWeight: '700',
+		color: colors.text,
+	},
+	welcomeCode: {
+		fontSize: 48,
+		fontWeight: '900',
+		color: colors.primary,
+		letterSpacing: 6,
+	},
+	welcomeHint: {
+		fontSize: fontSize.sm,
+		color: colors.textLight,
+		textAlign: 'center',
+	},
+	welcomeShare: {
+		backgroundColor: colors.primary,
+		borderRadius: radius.lg,
+		paddingHorizontal: spacing.xl,
+		paddingVertical: spacing.md,
+		alignItems: 'center',
+		width: '100%',
+	},
+	welcomeShareText: { color: '#fff', fontWeight: '700', fontSize: fontSize.md },
+	welcomeDismiss: { color: colors.textLight, fontSize: fontSize.md },
+
+	quitButton: {
+		alignItems: 'center',
+		paddingVertical: spacing.md,
+		borderTopWidth: 1,
+		borderTopColor: colors.border,
+	},
+	quitButtonText: {
+		color: colors.error,
+		fontSize: fontSize.sm,
+		fontWeight: '600',
+	},
 });

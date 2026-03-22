@@ -9,6 +9,7 @@ import {
 	Alert,
 	KeyboardAvoidingView,
 	Platform,
+	Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -100,6 +101,10 @@ export default function HomeScreen() {
 				>
 					{/* Header */}
 					<View style={styles.header}>
+						<Image
+							source={require('../assets/icon.png')}
+							style={styles.logoImage}
+						/>
 						<Text style={styles.logo}>bingoo</Text>
 						<Text style={styles.tagline}>your friends know you too well.</Text>
 					</View>
@@ -140,7 +145,7 @@ export default function HomeScreen() {
 								disabled={loading}
 							>
 								<Text style={styles.primaryButtonText}>
-									{loading ? 'Creating…' : 'Create'}
+									{loading ? 'creating…' : 'create'}
 								</Text>
 							</TouchableOpacity>
 
@@ -210,6 +215,12 @@ const styles = StyleSheet.create({
 		paddingVertical: spacing.xl,
 		paddingTop: spacing.xxl,
 	},
+	logoImage: {
+		width: 160,
+		height: 160,
+		borderRadius: 20,
+		marginBottom: spacing.sm,
+	},
 	logo: {
 		fontSize: 56,
 		fontWeight: '900',
@@ -261,6 +272,8 @@ const styles = StyleSheet.create({
 		borderRadius: radius.lg,
 		padding: spacing.md,
 		alignItems: 'center',
+		alignSelf: 'center',
+		minWidth: 200,
 		marginTop: spacing.sm,
 	},
 	primaryButtonText: {
@@ -273,6 +286,8 @@ const styles = StyleSheet.create({
 		borderRadius: radius.lg,
 		padding: spacing.md,
 		alignItems: 'center',
+		alignSelf: 'center',
+		minWidth: 200,
 		borderWidth: 1.5,
 		borderColor: colors.border,
 	},
