@@ -21,11 +21,17 @@ import {
 	markPrediction,
 	announceWinner,
 	getCard,
+	removePlayerFromGame,
+	reportPrediction,
+	type Player,
+	type ReportReason,
 } from '../../../lib/firestore';
 import { getWinningLine } from '../../../lib/gameLogic';
 import { useGameStore } from '../../../store/gameStore';
 import { sendPushNotifications } from '../../../lib/notifications';
 import { feedbackMark, feedbackWin, feedbackSelection } from '../../../lib/feedback';
+import { ReportModal } from '../../../components/ReportModal';
+import { PlayerList } from '../../../components/lobby/PlayerList';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const GRID_PADDING = spacing.lg * 2;
@@ -54,6 +60,9 @@ export default function PlayScreen() {
 	const announcedWinners = useRef<Set<string>>(new Set());
 	const [selectedPredId, setSelectedPredId] = useState<string | null>(null);
 	const [showHistory, setShowHistory] = useState(false);
+	const [showReportModal, setShowReportModal] = useState(false);
+	const [showPlayersModal, setShowPlayersModal] = useState(false);
+	const wasRemovedRef = useRef(false);
 
 	const gridSize = game?.gridSize ?? 4;
 	const cellSize = (SCREEN_WIDTH - GRID_PADDING) / gridSize - spacing.xs;
@@ -74,6 +83,16 @@ export default function PlayScreen() {
 		return () => unsubs.forEach((u) => u());
 	}, [gameId]);
 
+	useEffect(() => {
+		if (!playerId || players.length === 0 || wasRemovedRef.current) return;
+		if (players.some((p) => p.id === playerId)) return;
+		wasRemovedRef.current = true;
+		useGameStore.getState().reset();
+		Alert.alert('Removed from game', 'The host removed you from this game.', [
+			{ text: 'OK', onPress: () => router.replace('/') },
+		]);
+	}, [players, playerId]);
+
 	// Load own card for display
 	useEffect(() => {
 		if (!gameId || !playerId) return;
@@ -86,6 +105,14 @@ export default function PlayScreen() {
 	// Load all players' cards for universal win detection
 	useEffect(() => {
 		if (!gameId || players.length === 0) return;
+		const activePlayerIds = new Set(players.map((p) => p.id));
+		setAllCards((prev) => {
+			const next = new Map<string, string[]>();
+			prev.forEach((grid, pid) => {
+				if (activePlayerIds.has(pid)) next.set(pid, grid);
+			});
+			return next;
+		});
 		players.forEach((p) => {
 			if (allCards.has(p.id)) return;
 			getCard(gameId, p.id).then((grid) => {
@@ -98,8 +125,10 @@ export default function PlayScreen() {
 	useEffect(() => {
 		if (!gameId || !game || (game.status !== 'active' && game.status !== 'finished')) return;
 		if (allCards.size === 0) return;
+		const activePlayerIds = new Set(players.map((p) => p.id));
 		const markedSet = new Set(marks.map((m) => m.predictionId));
 		allCards.forEach((grid, pid) => {
+			if (!activePlayerIds.has(pid)) return;
 			if (announcedWinners.current.has(pid)) return;
 			const line = getWinningLine(grid, markedSet, gridSize);
 			if (!line) return;
@@ -163,6 +192,40 @@ export default function PlayScreen() {
 		setSelectedPredId(null);
 	};
 
+	const handleReportSelectedPrediction = async (reason: ReportReason) => {
+		if (!gameId || !playerId || !selectedPred) return;
+		try {
+			await reportPrediction(gameId, selectedPred.id, playerId, reason);
+			Alert.alert('Reported', 'Thanks. We will review it.');
+		} catch {
+			Alert.alert('Error', 'Could not send the report. Try again.');
+		} finally {
+			setShowReportModal(false);
+		}
+	};
+
+	const handleRemovePlayer = (player: Player) => {
+		if (!gameId || !game || player.id === game.hostId) return;
+		Alert.alert(
+			`Remove ${player.nickname}?`,
+			'They will immediately lose access to this game.',
+			[
+				{ text: 'Cancel', style: 'cancel' },
+				{
+					text: 'Remove',
+					style: 'destructive',
+					onPress: async () => {
+						try {
+							await removePlayerFromGame(gameId, player.id, false);
+						} catch {
+							Alert.alert('Error', 'Could not remove this player. Try again.');
+						}
+					},
+				},
+			],
+		);
+	};
+
 	const selectedPred = selectedPredId ? getPrediction(selectedPredId) : null;
 	const selectedIsMarked = selectedPredId
 		? markedIds.has(selectedPredId)
@@ -180,7 +243,16 @@ export default function PlayScreen() {
 		<SafeAreaView style={styles.safe}>
 			<ScrollView contentContainerStyle={styles.container}>
 				<View style={styles.header}>
-					<View style={styles.headerSpacer} />
+					{game?.hostId === playerId ? (
+						<TouchableOpacity
+							onPress={() => setShowPlayersModal(true)}
+							style={styles.manageButton}
+						>
+							<Text style={styles.manageButtonText}>players</Text>
+						</TouchableOpacity>
+					) : (
+						<View style={styles.headerSpacer} />
+					)}
 					<View style={styles.headerCenter}>
 						<Text style={styles.title}>bingoo</Text>
 						<Text style={styles.subtitle}>
@@ -297,6 +369,12 @@ export default function PlayScreen() {
 									</TouchableOpacity>
 								)}
 								<TouchableOpacity
+									style={styles.reportButton}
+									onPress={() => setShowReportModal(true)}
+								>
+									<Text style={styles.reportButtonText}>Report</Text>
+								</TouchableOpacity>
+								<TouchableOpacity
 									style={styles.closeButton}
 									onPress={() => setSelectedPredId(null)}
 								>
@@ -304,6 +382,48 @@ export default function PlayScreen() {
 								</TouchableOpacity>
 							</>
 						)}
+					</TouchableOpacity>
+				</TouchableOpacity>
+			</Modal>
+
+			<ReportModal
+				visible={showReportModal}
+				title="Report prediction"
+				onClose={() => setShowReportModal(false)}
+				onSelect={handleReportSelectedPrediction}
+			/>
+
+			<Modal
+				visible={showPlayersModal}
+				transparent
+				animationType="slide"
+				onRequestClose={() => setShowPlayersModal(false)}
+			>
+				<TouchableOpacity
+					style={styles.overlay}
+					activeOpacity={1}
+					onPress={() => setShowPlayersModal(false)}
+				>
+					<TouchableOpacity
+						style={[styles.modalCard, styles.playersCard]}
+						activeOpacity={1}
+					>
+						<Text style={styles.historyTitle}>Players</Text>
+						<ScrollView style={styles.historyScroll} bounces={false}>
+							<PlayerList
+								players={players}
+								playerId={playerId!}
+								hostId={game!.hostId}
+								onRemovePlayer={handleRemovePlayer}
+								statusLabel={() => 'Playing'}
+							/>
+						</ScrollView>
+						<TouchableOpacity
+							style={styles.closeButton}
+							onPress={() => setShowPlayersModal(false)}
+						>
+							<Text style={styles.closeButtonText}>Close</Text>
+						</TouchableOpacity>
 					</TouchableOpacity>
 				</TouchableOpacity>
 			</Modal>
@@ -360,6 +480,16 @@ const styles = StyleSheet.create({
 
 	header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' },
 	headerSpacer: { width: 36 },
+	manageButton: {
+		minWidth: 56,
+		paddingVertical: spacing.xs,
+	},
+	manageButtonText: {
+		fontSize: fontSize.sm,
+		color: colors.primary,
+		fontWeight: '700',
+		textTransform: 'uppercase',
+	},
 	headerCenter: { alignItems: 'center', gap: spacing.xs },
 	homeButton: { width: 36, alignItems: 'flex-end', justifyContent: 'center' },
 	homeButtonText: { fontSize: 20, color: colors.textLight },
@@ -470,10 +600,18 @@ const styles = StyleSheet.create({
 		alignItems: 'center',
 	},
 	markButtonText: { color: '#fff', fontSize: fontSize.md, fontWeight: '700' },
+	reportButton: { alignItems: 'center', paddingVertical: spacing.xs },
+	reportButtonText: {
+		color: colors.textLight,
+		fontSize: fontSize.sm,
+		fontWeight: '700',
+		textTransform: 'uppercase',
+	},
 	closeButton: { alignItems: 'center', padding: spacing.sm },
 	closeButtonText: { color: colors.textLight, fontSize: fontSize.md },
 
 	historyCard: { maxHeight: '80%' },
+	playersCard: { maxHeight: '80%' },
 	historyTitle: {
 		fontSize: fontSize.lg,
 		fontWeight: '700',

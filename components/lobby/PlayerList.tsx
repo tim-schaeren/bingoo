@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Player } from '../../lib/firestore';
 import { colors, spacing, radius, fontSize } from '../../constants/theme';
 
@@ -6,9 +6,19 @@ interface Props {
   players: Player[];
   playerId: string;
   hostId: string;
+  onReportPlayer?: (player: Player) => void;
+  onRemovePlayer?: (player: Player) => void;
+  statusLabel?: (player: Player) => string;
 }
 
-export function PlayerList({ players, playerId, hostId }: Props) {
+export function PlayerList({
+  players,
+  playerId,
+  hostId,
+  onReportPlayer,
+  onRemovePlayer,
+  statusLabel,
+}: Props) {
   return (
     <View style={styles.container}>
       <Text style={styles.meta}>{players.length} players</Text>
@@ -27,9 +37,26 @@ export function PlayerList({ players, playerId, hostId }: Props) {
               </View>
             )}
           </View>
-          <Text style={[styles.status, p.predictionsSubmitted && styles.statusDone]}>
-            {p.predictionsSubmitted ? 'Done ✓' : 'Writing…'}
-          </Text>
+          <View style={styles.rowRight}>
+            <Text
+              style={[
+                styles.status,
+                !statusLabel && p.predictionsSubmitted && styles.statusDone,
+              ]}
+            >
+              {statusLabel ? statusLabel(p) : p.predictionsSubmitted ? 'Done ✓' : 'Writing…'}
+            </Text>
+            {p.id !== playerId && onReportPlayer && (
+              <TouchableOpacity onPress={() => onReportPlayer(p)}>
+                <Text style={styles.report}>report</Text>
+              </TouchableOpacity>
+            )}
+            {p.id !== playerId && p.id !== hostId && onRemovePlayer && (
+              <TouchableOpacity onPress={() => onRemovePlayer(p)}>
+                <Text style={styles.remove}>remove</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       ))}
     </View>
@@ -56,6 +83,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  rowRight: { alignItems: 'flex-end', gap: 4 },
   name: { fontSize: fontSize.md, color: colors.text, fontWeight: '500' },
   pillYou: {
     backgroundColor: colors.secondary,
@@ -73,4 +101,6 @@ const styles = StyleSheet.create({
   pillHostText: { fontSize: 11, fontWeight: '700', color: colors.primary },
   status: { fontSize: fontSize.sm, color: colors.textLight },
   statusDone: { color: colors.success, fontWeight: '600' },
+  report: { fontSize: 11, color: colors.textLight, fontWeight: '700', textTransform: 'uppercase' },
+  remove: { fontSize: 11, color: colors.error, fontWeight: '700', textTransform: 'uppercase' },
 });

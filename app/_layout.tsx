@@ -24,14 +24,13 @@ async function waitForHydration(): Promise<void> {
 }
 
 async function syncPushToken(): Promise<void> {
+  const { pushToken, setPushToken, gameId, playerId } = useGameStore.getState();
+  if (!gameId || !playerId) return;
   const token = await registerForPushNotifications();
   if (!token) return;
-  const { pushToken, setPushToken, gameId, playerId } = useGameStore.getState();
   if (token !== pushToken) {
     setPushToken(token);
-    if (gameId && playerId) {
-      savePushToken(gameId, playerId, token).catch(() => {});
-    }
+    savePushToken(gameId, playerId, token).catch(() => {});
   }
 }
 
@@ -72,10 +71,12 @@ export default function RootLayout() {
             return;
           }
         }
+        reset();
       } catch {
-        // Network error fetching game — fall through to home
+        // Preserve the local session if we can't reach Firestore yet.
+        setReady(true);
+        return;
       }
-      reset();
     }
 
     setReady(true);

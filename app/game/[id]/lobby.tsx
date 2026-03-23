@@ -26,9 +26,14 @@ import {
 	startGame,
 	cancelGame,
 	leaveGame,
+	removePlayerFromGame,
+	reportPlayer,
+	reportPrediction,
 	setReaction,
 	type ReactionEmoji,
 	type Prediction,
+	type Player,
+	type ReportReason,
 } from '../../../lib/firestore';
 import { useGameStore } from '../../../store/gameStore';
 import { sendPushNotifications } from '../../../lib/notifications';
@@ -37,6 +42,7 @@ import { PlayerList } from '../../../components/lobby/PlayerList';
 import { PredictionCard } from '../../../components/lobby/PredictionCard';
 import { SubjectPickerModal } from '../../../components/lobby/SubjectPickerModal';
 import { WelcomeModal } from '../../../components/lobby/WelcomeModal';
+import { ReportModal } from '../../../components/ReportModal';
 
 const PREDICTIONS_PER_PLAYER = 2;
 const MIN_PLAYERS = 3;
@@ -56,10 +62,13 @@ export default function LobbyScreen() {
 	const [showWelcome, setShowWelcome] = useState(isHost);
 	const [showSubjectPicker, setShowSubjectPicker] = useState(false);
 	const [reactionPickerFor, setReactionPickerFor] = useState<string | null>(null);
+	const [reportingPrediction, setReportingPrediction] = useState<Prediction | null>(null);
+	const [reportingPlayer, setReportingPlayer] = useState<Player | null>(null);
 
 	const inputRef = useRef<TextInput>(null);
 	const autoSubmittedRef = useRef(false);
 	const editingRef = useRef(false);
+	const wasRemovedRef = useRef(false);
 
 	useEffect(() => {
 		if (!gameId) return;
@@ -85,6 +94,16 @@ export default function LobbyScreen() {
 		];
 		return () => unsubs.forEach((u) => u());
 	}, [gameId]);
+
+	useEffect(() => {
+		if (!playerId || players.length === 0 || wasRemovedRef.current) return;
+		if (players.some((p) => p.id === playerId)) return;
+		wasRemovedRef.current = true;
+		useGameStore.getState().reset();
+		Alert.alert('Removed from game', 'The host removed you from this game.', [
+			{ text: 'OK', onPress: () => router.replace('/') },
+		]);
+	}, [players, playerId]);
 
 	const otherPlayers = players.filter((p) => p.id !== playerId);
 	const me = players.find((p) => p.id === playerId);
@@ -213,6 +232,55 @@ export default function LobbyScreen() {
 		]);
 	};
 
+	const handleReportPrediction = (prediction: Prediction) => {
+		setReportingPrediction(prediction);
+	};
+
+	const handleReportPlayer = (player: Player) => {
+		setReportingPlayer(player);
+	};
+
+	const handleSubmitReport = async (reason: ReportReason) => {
+		if (!gameId || !playerId) return;
+		try {
+			if (reportingPrediction) {
+				await reportPrediction(gameId, reportingPrediction.id, playerId, reason);
+			} else if (reportingPlayer) {
+				await reportPlayer(gameId, reportingPlayer.id, playerId, reason);
+			} else {
+				return;
+			}
+			Alert.alert('Reported', 'Thanks. We will review it.');
+		} catch {
+			Alert.alert('Error', 'Could not send the report. Try again.');
+		} finally {
+			setReportingPrediction(null);
+			setReportingPlayer(null);
+		}
+	};
+
+	const handleRemovePlayer = (player: Player) => {
+		if (!gameId || !game || !isHost || player.id === game.hostId) return;
+		Alert.alert(
+			`Remove ${player.nickname}?`,
+			'They will be removed from this lobby and lose access to the game.',
+			[
+				{ text: 'Cancel', style: 'cancel' },
+				{
+					text: 'Remove',
+					style: 'destructive',
+					onPress: async () => {
+						try {
+							await removePlayerFromGame(gameId, player.id, true);
+						} catch {
+							Alert.alert('Error', 'Could not remove this player. Try again.');
+						}
+					},
+				},
+			],
+		);
+	};
+
 	const handleStartGame = async () => {
 		if (!gameId) return;
 		if (!allSubmitted) {
@@ -317,7 +385,13 @@ export default function LobbyScreen() {
 						</TouchableOpacity>
 					</View>
 
-					<PlayerList players={players} playerId={playerId!} hostId={game.hostId} />
+					<PlayerList
+						players={players}
+						playerId={playerId!}
+						hostId={game.hostId}
+						onReportPlayer={handleReportPlayer}
+						onRemovePlayer={isHost ? handleRemovePlayer : undefined}
+					/>
 
 					{/* Prediction pool */}
 					{visiblePredictions.length > 0 && (
@@ -330,6 +404,7 @@ export default function LobbyScreen() {
 									submitted={submitted}
 									getPlayerName={getPlayerName}
 									onDelete={handleDeletePrediction}
+									onReport={handleReportPrediction}
 									onReact={handleReaction}
 									reactionPickerOpen={reactionPickerFor === p.id}
 									onTogglePicker={() =>
@@ -456,6 +531,16 @@ export default function LobbyScreen() {
 				visible={showWelcome}
 				onClose={() => setShowWelcome(false)}
 				gameCode={game.code}
+			/>
+
+			<ReportModal
+				visible={!!reportingPrediction || !!reportingPlayer}
+				title={reportingPrediction ? 'Report prediction' : `Report ${reportingPlayer?.nickname ?? 'player'}`}
+				onClose={() => {
+					setReportingPrediction(null);
+					setReportingPlayer(null);
+				}}
+				onSelect={handleSubmitReport}
 			/>
 
 			{/* Fixed bottom quit/leave */}

@@ -64,6 +64,16 @@ export interface Mark {
   markedAt: Timestamp;
 }
 
+export const REPORT_REASONS = [
+  'harassment',
+  'sexual_content',
+  'hate_speech',
+  'spam',
+  'other',
+] as const;
+export type ReportReason = (typeof REPORT_REASONS)[number];
+export type ReportTargetType = 'prediction' | 'player';
+
 // ─── Create ───────────────────────────────────────────────────────────────────
 
 export async function createGame(
@@ -255,6 +265,43 @@ export async function savePushToken(
   await updateDoc(doc(db, 'games', gameId, 'players', playerId), { pushToken });
 }
 
+// ─── Reports ──────────────────────────────────────────────────────────────────
+
+async function createReport(
+  gameId: string,
+  reporterId: string,
+  targetType: ReportTargetType,
+  targetId: string,
+  reason: ReportReason,
+): Promise<void> {
+  await setDoc(doc(db, 'games', gameId, 'reports', generateId()), {
+    targetType,
+    targetId,
+    reason,
+    reporterId,
+    status: 'open',
+    createdAt: serverTimestamp(),
+  });
+}
+
+export async function reportPrediction(
+  gameId: string,
+  predictionId: string,
+  reporterId: string,
+  reason: ReportReason,
+): Promise<void> {
+  await createReport(gameId, reporterId, 'prediction', predictionId, reason);
+}
+
+export async function reportPlayer(
+  gameId: string,
+  reportedPlayerId: string,
+  reporterId: string,
+  reason: ReportReason,
+): Promise<void> {
+  await createReport(gameId, reporterId, 'player', reportedPlayerId, reason);
+}
+
 // ─── Lobby management ────────────────────────────────────────────────────────
 
 export async function cancelGame(gameId: string): Promise<void> {
@@ -274,3 +321,23 @@ export async function leaveGame(gameId: string, playerId: string): Promise<void>
   await batch.commit();
 }
 
+export async function removePlayerFromGame(
+  gameId: string,
+  playerId: string,
+  deletePredictions: boolean,
+): Promise<void> {
+  const batch = writeBatch(db);
+
+  if (deletePredictions) {
+    const predictionsRef = collection(db, 'games', gameId, 'predictions');
+    const [asSubject, asAuthor] = await Promise.all([
+      getDocs(query(predictionsRef, where('subjectId', '==', playerId))),
+      getDocs(query(predictionsRef, where('authorId', '==', playerId))),
+    ]);
+    asSubject.docs.forEach((d) => batch.delete(d.ref));
+    asAuthor.docs.forEach((d) => batch.delete(d.ref));
+  }
+
+  batch.delete(doc(db, 'games', gameId, 'players', playerId));
+  await batch.commit();
+}

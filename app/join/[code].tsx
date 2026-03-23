@@ -8,6 +8,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Linking,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -15,16 +16,27 @@ import { colors, spacing, radius, fontSize } from '../../constants/theme';
 import { getGameByCode, joinGame } from '../../lib/firestore';
 import { useGameStore } from '../../store/gameStore';
 
+const PRIVACY_POLICY_URL = 'https://tim-schaeren.github.io/bingoo/privacy-policy.html';
+const COMMUNITY_GUIDELINES_URL = 'https://tim-schaeren.github.io/bingoo/community-guidelines.html';
+
 // Handles deep links: bingoo://join/GAMECODE
 export default function JoinByLinkScreen() {
   const { code } = useLocalSearchParams<{ code: string }>();
   const [nickname, setNickname] = useState('');
   const [loading, setLoading] = useState(false);
+  const [acceptedPolicies, setAcceptedPolicies] = useState(false);
   const setSession = useGameStore(s => s.setSession);
 
   const handleJoin = async () => {
     if (!nickname.trim()) {
       Alert.alert('Missing nickname', 'Enter a nickname to join the game.');
+      return;
+    }
+    if (!acceptedPolicies) {
+      Alert.alert(
+        'Agree first',
+        'Please agree to the community rules and privacy policy before joining.',
+      );
       return;
     }
     setLoading(true);
@@ -71,6 +83,28 @@ export default function JoinByLinkScreen() {
             returnKeyType="join"
             onSubmitEditing={handleJoin}
           />
+
+          <View style={styles.policyRow}>
+            <TouchableOpacity
+              style={[styles.checkbox, acceptedPolicies && styles.checkboxChecked]}
+              onPress={() => setAcceptedPolicies(value => !value)}
+            >
+              {acceptedPolicies && <Text style={styles.checkboxMark}>✓</Text>}
+            </TouchableOpacity>
+            <View style={styles.policyTextWrap}>
+              <Text style={styles.policyText}>
+                I agree to the community rules and privacy policy.
+              </Text>
+              <View style={styles.policyLinks}>
+                <TouchableOpacity onPress={() => Linking.openURL(COMMUNITY_GUIDELINES_URL)}>
+                  <Text style={styles.policyLinkText}>Community rules</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}>
+                  <Text style={styles.policyLinkText}>Privacy policy</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
 
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
@@ -125,6 +159,31 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     color: colors.text,
   },
+  policyRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  checkboxChecked: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  checkboxMark: { color: '#fff', fontWeight: '800', fontSize: 12 },
+  policyTextWrap: { flex: 1, gap: spacing.xs },
+  policyText: { fontSize: fontSize.sm, color: colors.textLight, lineHeight: 18 },
+  policyLinks: { flexDirection: 'row', gap: spacing.md, flexWrap: 'wrap' },
+  policyLinkText: { fontSize: fontSize.sm, color: colors.primary, fontWeight: '600' },
   button: {
     backgroundColor: colors.primary,
     borderRadius: radius.lg,

@@ -19,7 +19,6 @@ export default {
         ITSAppUsesNonExemptEncryption: false,
         NSUserNotificationsUsageDescription: 'bingoo notifies you when a prediction comes true, the game starts, or someone wins.',
       },
-      plugins: [['expo-notifications', { icon: './assets/icon.png', color: '#6C3CE2' }]],
     },
     android: {
       package: 'com.bingoo.app',
@@ -41,7 +40,10 @@ export default {
     web: {
       favicon: './assets/favicon.png',
     },
-    plugins: ['expo-router'],
+    plugins: [
+      'expo-router',
+      ['expo-notifications', { icon: './assets/icon.png', color: '#6C3CE2' }],
+    ],
     extra: {
       // These values are bundled into the app binary and are visible to anyone
       // who inspects the build. This is standard for React Native + Firebase.

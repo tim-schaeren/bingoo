@@ -12,11 +12,17 @@ service cloud.firestore {
     function isActive(gameId) { return gameData(gameId).status == 'active'; }
     function isHost(gameId)   { return request.auth.uid == gameData(gameId).hostId; }
     function isPlayer(gameId) { return exists(/databases/$(database)/documents/games/$(gameId)/players/$(request.auth.uid)); }
+    function playerExists(gameId, playerId) {
+      return exists(/databases/$(database)/documents/games/$(gameId)/players/$(playerId));
+    }
+    function predictionData(gameId, predictionId) {
+      return get(/databases/$(database)/documents/games/$(gameId)/predictions/$(predictionId)).data;
+    }
 
     // ─── Games ─────────────────────────────────────────────────────────────────
 
     match /games/{gameId} {
-      allow read: if true;
+      allow read: if resource.data.status == 'lobby' || isPlayer(gameId);
 
       allow create: if
         request.auth != null
@@ -33,13 +39,27 @@ service cloud.firestore {
         request.auth != null
         && resource.data.status != 'cancelled'
         && (
-          (request.resource.data.status == 'active' && isHost(gameId))
+          (
+            isHost(gameId)
+            && resource.data.status == 'lobby'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'gridSize'])
+            && request.resource.data.status == 'active'
+            && request.resource.data.gridSize >= 2
+            && request.resource.data.gridSize <= 5
+          )
           || (
-              (resource.data.status == 'active' || resource.data.status == 'finished')
-              && request.resource.data.status == 'finished'
-              && request.auth.uid != null
-            )
-          || (request.resource.data.status == 'cancelled' && isHost(gameId))
+            isPlayer(gameId)
+            && (resource.data.status == 'active' || resource.data.status == 'finished')
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'winners'])
+            && request.resource.data.status == 'finished'
+            && request.resource.data.winners.size() >= resource.data.winners.size()
+          )
+          || (
+            isHost(gameId)
+            && resource.data.status == 'lobby'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+            && request.resource.data.status == 'cancelled'
+          )
         );
 
       allow delete: if false;
@@ -55,7 +75,7 @@ service cloud.firestore {
           request.auth != null
           && request.auth.uid == playerId
           && isLobby(gameId)
-          && request.resource.data.keys().hasAll(['nickname', 'predictionsSubmitted', 'joinedAt'])
+          && request.resource.data.keys().hasOnly(['nickname', 'predictionsSubmitted', 'joinedAt', 'pushToken'])
           && request.resource.data.predictionsSubmitted == false
           && request.resource.data.nickname.size() > 0
           && request.resource.data.nickname.size() <= 20;
@@ -77,23 +97,27 @@ service cloud.firestore {
 
         allow delete: if
           request.auth != null
-          && request.auth.uid == playerId
-          && isLobby(gameId);
+          && (
+            (request.auth.uid == playerId && isLobby(gameId))
+            || (isHost(gameId) && request.auth.uid != playerId && (isLobby(gameId) || isActive(gameId)))
+          );
       }
 
       // ─── Predictions ─────────────────────────────────────────────────────────
 
       match /predictions/{predictionId} {
-        allow read: if true;
+        allow read: if isPlayer(gameId);
 
         allow create: if
           request.auth != null
+          && isPlayer(gameId)
           && request.auth.uid == request.resource.data.authorId
           && isLobby(gameId)
           && request.resource.data.keys().hasAll(['authorId', 'subjectId', 'text', 'createdAt'])
           && request.resource.data.text.size() > 0
           && request.resource.data.text.size() <= 120
-          && request.resource.data.authorId != request.resource.data.subjectId;
+          && request.resource.data.authorId != request.resource.data.subjectId
+          && playerExists(gameId, request.resource.data.subjectId);
 
         allow update: if
           request.auth != null
@@ -103,14 +127,14 @@ service cloud.firestore {
 
         allow delete: if
           request.auth != null
-          && (request.auth.uid == resource.data.authorId || request.auth.uid == resource.data.subjectId)
+          && (request.auth.uid == resource.data.authorId || request.auth.uid == resource.data.subjectId || isHost(gameId))
           && isLobby(gameId);
       }
 
       // ─── Cards ───────────────────────────────────────────────────────────────
 
       match /cards/{playerId} {
-        allow read: if true;
+        allow read: if isPlayer(gameId);
 
         allow create: if
           request.auth != null
@@ -126,16 +150,40 @@ service cloud.firestore {
       // ─── Marks ───────────────────────────────────────────────────────────────
 
       match /marks/{predictionId} {
-        allow read: if true;
+        allow read: if isPlayer(gameId);
 
         allow create: if
           request.auth != null
+          && isPlayer(gameId)
           && request.auth.uid == request.resource.data.markedBy
           && isActive(gameId)
-          && request.resource.data.keys().hasAll(['markedBy', 'markedByNickname', 'markedAt']);
+          && request.resource.data.keys().hasAll(['markedBy', 'markedByNickname', 'markedAt'])
+          && predictionData(gameId, predictionId).subjectId != request.auth.uid;
 
         allow update: if false;
         allow delete: if false;
+      }
+
+      // ─── Reports ─────────────────────────────────────────────────────────────
+
+      match /reports/{reportId} {
+        allow create: if
+          request.auth != null
+          && isPlayer(gameId)
+          && request.resource.data.keys().hasAll([
+            'targetType',
+            'targetId',
+            'reason',
+            'reporterId',
+            'status',
+            'createdAt'
+          ])
+          && request.resource.data.reporterId == request.auth.uid
+          && request.resource.data.status == 'open'
+          && request.resource.data.targetType in ['prediction', 'player']
+          && request.resource.data.reason in ['harassment', 'sexual_content', 'hate_speech', 'spam', 'other'];
+
+        allow read, update, delete: if false;
       }
     }
   }

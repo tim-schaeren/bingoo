@@ -20,10 +20,11 @@ import { getDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import Constants from 'expo-constants';
 import { colors, spacing, radius, fontSize } from '../constants/theme';
-import { createGame, getGameByCode, joinGame } from '../lib/firestore';
+import { createGame, getGameByCode, joinGame, leaveGame } from '../lib/firestore';
 import { useGameStore } from '../store/gameStore';
 
 const PRIVACY_POLICY_URL = 'https://tim-schaeren.github.io/bingoo/privacy-policy.html';
+const COMMUNITY_GUIDELINES_URL = 'https://tim-schaeren.github.io/bingoo/community-guidelines.html';
 const FEEDBACK_EMAIL = 'argyles.twigs9p@icloud.com';
 const APP_VERSION = Constants.expoConfig?.version ?? '1.0.0';
 
@@ -55,8 +56,9 @@ export default function HomeScreen() {
 	const [loading, setLoading] = useState(false);
 	const [rulesOpen, setRulesOpen] = useState(false);
 	const [infoOpen, setInfoOpen] = useState(false);
+	const [acceptedPolicies, setAcceptedPolicies] = useState(false);
 
-	const { setSession, pushToken, gameId, reset } = useGameStore();
+	const { setSession, pushToken, gameId, playerId, reset } = useGameStore();
 
 	const iconAnim = useRef(new Animated.Value(1)).current;
 
@@ -100,6 +102,13 @@ export default function HomeScreen() {
 			);
 			return;
 		}
+		if (!acceptedPolicies) {
+			Alert.alert(
+				'Agree first',
+				'Please agree to the community rules and privacy policy before creating a game.',
+			);
+			return;
+		}
 		setLoading(true);
 		try {
 			const { gameId: newGameId, playerId } = await createGame(
@@ -127,6 +136,13 @@ export default function HomeScreen() {
 			Alert.alert('Missing code', 'Enter the game code your friend shared.');
 			return;
 		}
+		if (!acceptedPolicies) {
+			Alert.alert(
+				'Agree first',
+				'Please agree to the community rules and privacy policy before joining a game.',
+			);
+			return;
+		}
 		setLoading(true);
 		try {
 			const game = await getGameByCode(joinCode.trim());
@@ -152,6 +168,31 @@ export default function HomeScreen() {
 				'Error',
 				'Could not join game. Check your connection and try again.',
 			);
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	const handleLeaveCurrentSession = async () => {
+		if (!gameId || !playerId) {
+			reset();
+			return;
+		}
+
+		setLoading(true);
+		try {
+			const snap = await getDoc(doc(db, 'games', gameId));
+			if (!snap.exists()) {
+				reset();
+				return;
+			}
+
+			if (snap.data().status === 'lobby') {
+				await leaveGame(gameId, playerId);
+			}
+			reset();
+		} catch {
+			Alert.alert('Error', 'Could not leave the saved game. Check your connection.');
 		} finally {
 			setLoading(false);
 		}
@@ -196,7 +237,7 @@ export default function HomeScreen() {
 
 					{mode === 'home' && (
 						<View style={styles.actions}>
-							{gameId ? (
+								{gameId ? (
 								<>
 									<TouchableOpacity
 										style={[
@@ -214,33 +255,21 @@ export default function HomeScreen() {
 											</Text>
 										)}
 									</TouchableOpacity>
-									<TouchableOpacity
-										onPress={() =>
-											Alert.alert(
-												'leave?',
-												'You will permanently lose your spot in this game and cannot rejoin.',
-												[
-													{ text: 'Stay', style: 'cancel' },
-													{
-														text: 'Leave game',
-														style: 'destructive',
-														onPress: () =>
-															Alert.alert(
-																'Are you sure?',
-																'This cannot be undone.',
-																[
-																	{ text: 'Cancel', style: 'cancel' },
-																	{
-																		text: 'Yes, leave',
-																		style: 'destructive',
-																		onPress: reset,
-																	},
-																],
-															),
-													},
-												],
-											)
-										}
+										<TouchableOpacity
+											onPress={() =>
+												Alert.alert(
+													'leave?',
+													'If the game is still in the lobby, your spot will be removed. Otherwise this clears it from this device.',
+													[
+														{ text: 'Stay', style: 'cancel' },
+														{
+															text: 'Leave game',
+															style: 'destructive',
+															onPress: handleLeaveCurrentSession,
+														},
+													],
+												)
+											}
 										style={styles.backButton}
 									>
 										<Text style={styles.backButtonText}>leave game</Text>
@@ -277,6 +306,28 @@ export default function HomeScreen() {
 								maxLength={20}
 								autoFocus
 							/>
+
+							<View style={styles.policyRow}>
+								<TouchableOpacity
+									style={[styles.checkbox, acceptedPolicies && styles.checkboxChecked]}
+									onPress={() => setAcceptedPolicies((value) => !value)}
+								>
+									{acceptedPolicies && <Text style={styles.checkboxMark}>✓</Text>}
+								</TouchableOpacity>
+								<View style={styles.policyTextWrap}>
+									<Text style={styles.policyText}>
+										I agree to the community rules and privacy policy.
+									</Text>
+									<View style={styles.policyLinks}>
+										<TouchableOpacity onPress={() => Linking.openURL(COMMUNITY_GUIDELINES_URL)}>
+											<Text style={styles.policyLinkText}>Community rules</Text>
+										</TouchableOpacity>
+										<TouchableOpacity onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}>
+											<Text style={styles.policyLinkText}>Privacy policy</Text>
+										</TouchableOpacity>
+									</View>
+								</View>
+							</View>
 
 							<TouchableOpacity
 								style={[styles.primaryButton, loading && styles.buttonDisabled]}
@@ -320,6 +371,28 @@ export default function HomeScreen() {
 								maxLength={6}
 								autoCapitalize="characters"
 							/>
+
+							<View style={styles.policyRow}>
+								<TouchableOpacity
+									style={[styles.checkbox, acceptedPolicies && styles.checkboxChecked]}
+									onPress={() => setAcceptedPolicies((value) => !value)}
+								>
+									{acceptedPolicies && <Text style={styles.checkboxMark}>✓</Text>}
+								</TouchableOpacity>
+								<View style={styles.policyTextWrap}>
+									<Text style={styles.policyText}>
+										I agree to the community rules and privacy policy.
+									</Text>
+									<View style={styles.policyLinks}>
+										<TouchableOpacity onPress={() => Linking.openURL(COMMUNITY_GUIDELINES_URL)}>
+											<Text style={styles.policyLinkText}>Community rules</Text>
+										</TouchableOpacity>
+										<TouchableOpacity onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}>
+											<Text style={styles.policyLinkText}>Privacy policy</Text>
+										</TouchableOpacity>
+									</View>
+								</View>
+							</View>
 
 							<TouchableOpacity
 								style={[styles.primaryButton, loading && styles.buttonDisabled]}
@@ -378,6 +451,12 @@ export default function HomeScreen() {
 									</Text>
 									<TouchableOpacity
 										style={styles.infoLink}
+										onPress={() => Linking.openURL(COMMUNITY_GUIDELINES_URL)}
+									>
+										<Text style={styles.infoLinkText}>Community Rules →</Text>
+									</TouchableOpacity>
+									<TouchableOpacity
+										style={styles.infoLink}
 										onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
 									>
 										<Text style={styles.infoLinkText}>Privacy Policy →</Text>
@@ -415,6 +494,31 @@ const styles = StyleSheet.create({
 		color: colors.primary,
 		fontWeight: '600',
 	},
+	policyRow: {
+		flexDirection: 'row',
+		alignItems: 'flex-start',
+		gap: spacing.sm,
+	},
+	checkbox: {
+		width: 22,
+		height: 22,
+		borderRadius: 6,
+		borderWidth: 1.5,
+		borderColor: colors.border,
+		backgroundColor: colors.surface,
+		alignItems: 'center',
+		justifyContent: 'center',
+		marginTop: 1,
+	},
+	checkboxChecked: {
+		backgroundColor: colors.primary,
+		borderColor: colors.primary,
+	},
+	checkboxMark: { color: '#fff', fontWeight: '800', fontSize: 12 },
+	policyTextWrap: { flex: 1, gap: spacing.xs },
+	policyText: { fontSize: fontSize.sm, color: colors.textLight, lineHeight: 18 },
+	policyLinks: { flexDirection: 'row', gap: spacing.md, flexWrap: 'wrap' },
+	policyLinkText: { fontSize: fontSize.sm, color: colors.primary, fontWeight: '600' },
 	container: { flexGrow: 1, padding: spacing.lg, paddingTop: 80, justifyContent: 'space-between' },
 	containerForm: { flexGrow: 1, padding: spacing.lg, paddingTop: spacing.lg },
 	accordions: { marginTop: spacing.xl },
