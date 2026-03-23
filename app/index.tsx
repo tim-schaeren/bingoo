@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
 	View,
 	Text,
@@ -60,17 +60,16 @@ export default function HomeScreen() {
 
 	const iconAnim = useRef(new Animated.Value(1)).current;
 
-	const switchMode = (next: Mode) => {
-		const toHome = next === 'home';
-		if (!toHome) setMode(next);
-		Animated.timing(iconAnim, {
-			toValue: toHome ? 1 : 0,
-			duration: 280,
-			useNativeDriver: false,
-		}).start(() => {
-			if (toHome) setMode(next);
-		});
-	};
+	useEffect(() => {
+		const timer = setTimeout(() => {
+			Animated.timing(iconAnim, {
+				toValue: 0,
+				duration: 400,
+				useNativeDriver: false,
+			}).start();
+		}, 800);
+		return () => clearTimeout(timer);
+	}, []);
 
 	const handleContinue = async () => {
 		if (!gameId) return;
@@ -165,7 +164,9 @@ export default function HomeScreen() {
 				behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
 			>
 				<ScrollView
-					contentContainerStyle={styles.container}
+					contentContainerStyle={
+						mode === 'home' ? styles.container : styles.containerForm
+					}
 					keyboardShouldPersistTaps="handled"
 				>
 					{/* Header */}
@@ -249,13 +250,13 @@ export default function HomeScreen() {
 								<>
 									<TouchableOpacity
 										style={styles.primaryButton}
-										onPress={() => switchMode('create')}
+										onPress={() => setMode('create')}
 									>
 										<Text style={styles.primaryButtonText}>create</Text>
 									</TouchableOpacity>
 									<TouchableOpacity
 										style={styles.secondaryButton}
-										onPress={() => switchMode('join')}
+										onPress={() => setMode('join')}
 									>
 										<Text style={styles.secondaryButtonText}>join</Text>
 									</TouchableOpacity>
@@ -289,7 +290,7 @@ export default function HomeScreen() {
 
 							<TouchableOpacity
 								style={styles.backButton}
-								onPress={() => switchMode('home')}
+								onPress={() => setMode('home')}
 							>
 								<Text style={styles.backButtonText}>Back</Text>
 							</TouchableOpacity>
@@ -332,16 +333,17 @@ export default function HomeScreen() {
 
 							<TouchableOpacity
 								style={styles.backButton}
-								onPress={() => switchMode('home')}
+								onPress={() => setMode('home')}
 							>
 								<Text style={styles.backButtonText}>Back</Text>
 							</TouchableOpacity>
 						</View>
 					)}
 
-					{/* Rules accordion */}
+					{/* Accordions — pinned to bottom */}
 					{mode === 'home' && (
-						<View style={styles.rules}>
+						<View style={styles.accordions}>
+							<View style={styles.rules}>
 							<TouchableOpacity
 								style={styles.rulesToggle}
 								onPress={() => setRulesOpen((o) => !o)}
@@ -359,12 +361,8 @@ export default function HomeScreen() {
 									))}
 								</View>
 							)}
-						</View>
-					)}
-
-					{/* About accordion */}
-					{mode === 'home' && (
-						<View style={[styles.rules, { marginTop: spacing.sm }]}>
+							</View>
+							<View style={[styles.rules, { marginTop: spacing.sm }]}>
 							<TouchableOpacity
 								style={styles.rulesToggle}
 								onPress={() => setInfoOpen((o) => !o)}
@@ -397,6 +395,7 @@ export default function HomeScreen() {
 									</Text>
 								</View>
 							)}
+							</View>
 						</View>
 					)}
 				</ScrollView>
@@ -416,11 +415,13 @@ const styles = StyleSheet.create({
 		color: colors.primary,
 		fontWeight: '600',
 	},
-	container: { flexGrow: 1, padding: spacing.lg, justifyContent: 'center' },
+	container: { flexGrow: 1, padding: spacing.lg, paddingTop: 80, justifyContent: 'space-between' },
+	containerForm: { flexGrow: 1, padding: spacing.lg, paddingTop: spacing.lg },
+	accordions: { marginTop: spacing.xl },
 	header: {
 		alignItems: 'center',
-		paddingVertical: spacing.xl,
-		paddingTop: spacing.xxl,
+		paddingTop: spacing.lg,
+		paddingBottom: spacing.sm,
 	},
 	logoImage: {
 		width: 240,
@@ -438,7 +439,7 @@ const styles = StyleSheet.create({
 		marginTop: spacing.xs,
 	},
 	actions: { gap: spacing.md },
-	form: { gap: spacing.md },
+	form: { gap: spacing.md, marginTop: spacing.xl },
 	label: {
 		fontSize: fontSize.sm,
 		fontWeight: '600',
@@ -495,7 +496,6 @@ const styles = StyleSheet.create({
 	buttonDisabled: { opacity: 0.6 },
 
 	rules: {
-		marginTop: spacing.xl,
 		borderRadius: radius.md,
 		borderWidth: 1,
 		borderColor: colors.border,
