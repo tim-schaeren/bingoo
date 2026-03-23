@@ -11,15 +11,20 @@ import {
 	Platform,
 	Image,
 	ActivityIndicator,
+	Linking,
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import Constants from 'expo-constants';
 import { colors, spacing, radius, fontSize } from '../constants/theme';
 import { createGame, getGameByCode, joinGame } from '../lib/firestore';
 import { useGameStore } from '../store/gameStore';
-import { InfoModal } from '../components/InfoModal';
+
+const PRIVACY_POLICY_URL = 'https://tim-schaeren.github.io/bingoo/privacy-policy.html';
+const FEEDBACK_EMAIL = 'argyles.twigs9p@icloud.com';
+const APP_VERSION = Constants.expoConfig?.version ?? '1.0.0';
 
 type Mode = 'home' | 'create' | 'join';
 
@@ -48,7 +53,7 @@ export default function HomeScreen() {
 	const [joinCode, setJoinCode] = useState('');
 	const [loading, setLoading] = useState(false);
 	const [rulesOpen, setRulesOpen] = useState(false);
-	const [showInfo, setShowInfo] = useState(false);
+	const [infoOpen, setInfoOpen] = useState(false);
 
 	const { setSession, pushToken, gameId, reset } = useGameStore();
 
@@ -140,10 +145,6 @@ export default function HomeScreen() {
 
 	return (
 		<SafeAreaView style={styles.safe}>
-			<TouchableOpacity style={styles.infoButton} onPress={() => setShowInfo(true)}>
-				<Text style={styles.infoButtonText}>ⓘ</Text>
-			</TouchableOpacity>
-			<InfoModal visible={showInfo} onClose={() => setShowInfo(false)} />
 			<KeyboardAvoidingView
 				style={styles.flex}
 				behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -330,6 +331,44 @@ export default function HomeScreen() {
 							)}
 						</View>
 					)}
+
+					{/* About accordion */}
+					{mode === 'home' && (
+						<View style={styles.rules}>
+							<TouchableOpacity
+								style={styles.rulesToggle}
+								onPress={() => setInfoOpen((o) => !o)}
+							>
+								<Text style={styles.rulesToggleText}>about</Text>
+								<Text style={styles.rulesChevron}>{infoOpen ? '▲' : '▼'}</Text>
+							</TouchableOpacity>
+							{infoOpen && (
+								<View style={styles.rulesList}>
+									<Text style={styles.ruleText}>
+										No account needed. bingoo uses anonymous sign-in — your real
+										identity is never collected or stored.
+									</Text>
+									<TouchableOpacity
+										style={styles.infoLink}
+										onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
+									>
+										<Text style={styles.infoLinkText}>Privacy Policy →</Text>
+									</TouchableOpacity>
+									<TouchableOpacity
+										style={styles.infoLink}
+										onPress={() =>
+											Linking.openURL(`mailto:${FEEDBACK_EMAIL}?subject=bingoo%20feedback`)
+										}
+									>
+										<Text style={styles.infoLinkText}>Send Feedback →</Text>
+									</TouchableOpacity>
+									<Text style={[styles.ruleText, { marginTop: spacing.xs }]}>
+										Version {APP_VERSION}
+									</Text>
+								</View>
+							)}
+						</View>
+					)}
 				</ScrollView>
 			</KeyboardAvoidingView>
 		</SafeAreaView>
@@ -339,16 +378,13 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
 	safe: { flex: 1, backgroundColor: colors.background },
 	flex: { flex: 1 },
-	infoButton: {
-		position: 'absolute',
-		top: spacing.md,
-		right: spacing.md,
-		zIndex: 10,
-		padding: spacing.sm,
+	infoLink: {
+		paddingVertical: spacing.xs,
 	},
-	infoButtonText: {
-		fontSize: 22,
-		color: colors.textLight,
+	infoLinkText: {
+		fontSize: fontSize.sm,
+		color: colors.primary,
+		fontWeight: '600',
 	},
 	container: { flexGrow: 1, padding: spacing.lg, justifyContent: 'center' },
 	header: {
