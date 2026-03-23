@@ -64,6 +64,8 @@ export default function LobbyScreen() {
 
 	useEffect(() => {
 		if (!gameId) return;
+		const onListenerError = () =>
+			Alert.alert('Connection error', 'Lost connection to game. Check your internet.');
 		const unsubs = [
 			listenToGame(gameId, (g) => {
 				setGame(g);
@@ -78,9 +80,9 @@ export default function LobbyScreen() {
 						]);
 					}
 				}
-			}),
-			listenToPlayers(gameId, setPlayers),
-			listenToPredictions(gameId, setPredictions),
+			}, onListenerError),
+			listenToPlayers(gameId, setPlayers, onListenerError),
+			listenToPredictions(gameId, setPredictions, onListenerError),
 		];
 		return () => unsubs.forEach((u) => u());
 	}, [gameId]);

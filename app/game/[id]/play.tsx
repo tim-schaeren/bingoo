@@ -60,14 +60,16 @@ export default function PlayScreen() {
 
 	useEffect(() => {
 		if (!gameId) return;
+		const onListenerError = () =>
+			Alert.alert('Connection error', 'Lost connection to game. Check your internet.');
 		const unsubs = [
 			listenToGame(gameId, (g) => {
 				setGame(g);
 				if (g.status === 'finished') router.replace(`/game/${gameId}/winner`);
-			}),
-			listenToMarks(gameId, setMarks),
-			listenToPredictions(gameId, setPredictions),
-			listenToPlayers(gameId, setPlayers),
+			}, onListenerError),
+			listenToMarks(gameId, setMarks, onListenerError),
+			listenToPredictions(gameId, setPredictions, onListenerError),
+			listenToPlayers(gameId, setPlayers, onListenerError),
 		];
 		return () => unsubs.forEach((u) => u());
 	}, [gameId]);

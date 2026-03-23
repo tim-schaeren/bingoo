@@ -221,28 +221,28 @@ export async function getCard(gameId: string, playerId: string): Promise<string[
 
 // ─── Real-time listeners ──────────────────────────────────────────────────────
 
-export function listenToGame(gameId: string, callback: (game: Game) => void) {
+export function listenToGame(gameId: string, callback: (game: Game) => void, onError?: (err: Error) => void) {
   return onSnapshot(doc(db, 'games', gameId), snap => {
     if (snap.exists()) callback({ id: snap.id, ...snap.data() } as Game);
-  });
+  }, onError);
 }
 
-export function listenToPlayers(gameId: string, callback: (players: Player[]) => void) {
+export function listenToPlayers(gameId: string, callback: (players: Player[]) => void, onError?: (err: Error) => void) {
   return onSnapshot(collection(db, 'games', gameId, 'players'), snap => {
     callback(snap.docs.map(d => ({ id: d.id, ...d.data() }) as Player));
-  });
+  }, onError);
 }
 
-export function listenToPredictions(gameId: string, callback: (predictions: Prediction[]) => void) {
+export function listenToPredictions(gameId: string, callback: (predictions: Prediction[]) => void, onError?: (err: Error) => void) {
   return onSnapshot(collection(db, 'games', gameId, 'predictions'), snap => {
     callback(snap.docs.map(d => ({ id: d.id, ...d.data() }) as Prediction));
-  });
+  }, onError);
 }
 
-export function listenToMarks(gameId: string, callback: (marks: Mark[]) => void) {
+export function listenToMarks(gameId: string, callback: (marks: Mark[]) => void, onError?: (err: Error) => void) {
   return onSnapshot(collection(db, 'games', gameId, 'marks'), snap => {
     callback(snap.docs.map(d => ({ predictionId: d.id, ...d.data() }) as Mark));
-  });
+  }, onError);
 }
 
 // ─── Push token ───────────────────────────────────────────────────────────────
