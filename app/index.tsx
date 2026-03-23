@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
 	View,
 	Text,
@@ -12,6 +12,7 @@ import {
 	Image,
 	ActivityIndicator,
 	Linking,
+	Animated,
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -56,6 +57,20 @@ export default function HomeScreen() {
 	const [infoOpen, setInfoOpen] = useState(false);
 
 	const { setSession, pushToken, gameId, reset } = useGameStore();
+
+	const iconAnim = useRef(new Animated.Value(1)).current;
+
+	const switchMode = (next: Mode) => {
+		const toHome = next === 'home';
+		if (!toHome) setMode(next);
+		Animated.timing(iconAnim, {
+			toValue: toHome ? 1 : 0,
+			duration: 280,
+			useNativeDriver: false,
+		}).start(() => {
+			if (toHome) setMode(next);
+		});
+	};
 
 	const handleContinue = async () => {
 		if (!gameId) return;
@@ -155,10 +170,25 @@ export default function HomeScreen() {
 				>
 					{/* Header */}
 					<View style={styles.header}>
-						<Image
-							source={require('../assets/icon_no_bg.png')}
-							style={styles.logoImage}
-						/>
+						<Animated.View
+							style={{
+								opacity: iconAnim,
+								height: iconAnim.interpolate({
+									inputRange: [0, 1],
+									outputRange: [0, 240],
+								}),
+								marginBottom: iconAnim.interpolate({
+									inputRange: [0, 1],
+									outputRange: [0, spacing.sm],
+								}),
+								overflow: 'hidden',
+							}}
+						>
+							<Image
+								source={require('../assets/icon_no_bg.png')}
+								style={styles.logoImage}
+							/>
+						</Animated.View>
 						<Text style={styles.logo}>bingoo</Text>
 						<Text style={styles.tagline}>your friends know you too well.</Text>
 					</View>
@@ -219,13 +249,13 @@ export default function HomeScreen() {
 								<>
 									<TouchableOpacity
 										style={styles.primaryButton}
-										onPress={() => setMode('create')}
+										onPress={() => switchMode('create')}
 									>
 										<Text style={styles.primaryButtonText}>create</Text>
 									</TouchableOpacity>
 									<TouchableOpacity
 										style={styles.secondaryButton}
-										onPress={() => setMode('join')}
+										onPress={() => switchMode('join')}
 									>
 										<Text style={styles.secondaryButtonText}>join</Text>
 									</TouchableOpacity>
@@ -259,7 +289,7 @@ export default function HomeScreen() {
 
 							<TouchableOpacity
 								style={styles.backButton}
-								onPress={() => setMode('home')}
+								onPress={() => switchMode('home')}
 							>
 								<Text style={styles.backButtonText}>Back</Text>
 							</TouchableOpacity>
@@ -302,7 +332,7 @@ export default function HomeScreen() {
 
 							<TouchableOpacity
 								style={styles.backButton}
-								onPress={() => setMode('home')}
+								onPress={() => switchMode('home')}
 							>
 								<Text style={styles.backButtonText}>Back</Text>
 							</TouchableOpacity>
@@ -334,7 +364,7 @@ export default function HomeScreen() {
 
 					{/* About accordion */}
 					{mode === 'home' && (
-						<View style={styles.rules}>
+						<View style={[styles.rules, { marginTop: spacing.sm }]}>
 							<TouchableOpacity
 								style={styles.rulesToggle}
 								onPress={() => setInfoOpen((o) => !o)}
@@ -395,7 +425,6 @@ const styles = StyleSheet.create({
 	logoImage: {
 		width: 240,
 		height: 240,
-		marginBottom: spacing.sm,
 	},
 	logo: {
 		fontSize: 56,
