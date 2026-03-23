@@ -19,6 +19,7 @@ import { db } from '../lib/firebase';
 import { colors, spacing, radius, fontSize } from '../constants/theme';
 import { createGame, getGameByCode, joinGame } from '../lib/firestore';
 import { useGameStore } from '../store/gameStore';
+import { InfoModal } from '../components/InfoModal';
 
 type Mode = 'home' | 'create' | 'join';
 
@@ -47,6 +48,7 @@ export default function HomeScreen() {
 	const [joinCode, setJoinCode] = useState('');
 	const [loading, setLoading] = useState(false);
 	const [rulesOpen, setRulesOpen] = useState(false);
+	const [showInfo, setShowInfo] = useState(false);
 
 	const { setSession, pushToken, gameId, reset } = useGameStore();
 
@@ -138,6 +140,10 @@ export default function HomeScreen() {
 
 	return (
 		<SafeAreaView style={styles.safe}>
+			<TouchableOpacity style={styles.infoButton} onPress={() => setShowInfo(true)}>
+				<Text style={styles.infoButtonText}>ⓘ</Text>
+			</TouchableOpacity>
+			<InfoModal visible={showInfo} onClose={() => setShowInfo(false)} />
 			<KeyboardAvoidingView
 				style={styles.flex}
 				behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -333,6 +339,17 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
 	safe: { flex: 1, backgroundColor: colors.background },
 	flex: { flex: 1 },
+	infoButton: {
+		position: 'absolute',
+		top: spacing.md,
+		right: spacing.md,
+		zIndex: 10,
+		padding: spacing.sm,
+	},
+	infoButtonText: {
+		fontSize: 22,
+		color: colors.textLight,
+	},
 	container: { flexGrow: 1, padding: spacing.lg, justifyContent: 'center' },
 	header: {
 		alignItems: 'center',
