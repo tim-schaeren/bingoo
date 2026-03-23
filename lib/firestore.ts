@@ -11,6 +11,8 @@ import {
   where,
   serverTimestamp,
   arrayUnion,
+  arrayRemove,
+  writeBatch,
   Timestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
@@ -43,12 +45,16 @@ export interface Player {
   pushToken?: string | null;
 }
 
+export const REACTION_EMOJIS = ['😂', '🔥', '💀', '👀', '🎯'] as const;
+export type ReactionEmoji = (typeof REACTION_EMOJIS)[number];
+
 export interface Prediction {
   id: string;
   authorId: string;
   subjectId: string;
   text: string;
   createdAt: Timestamp;
+  reactions?: Partial<Record<ReactionEmoji, string[]>>;
 }
 
 export interface Mark {
@@ -143,6 +149,24 @@ export async function markPlayerWriting(gameId: string, playerId: string): Promi
 
 export async function deletePrediction(gameId: string, predictionId: string): Promise<void> {
   await deleteDoc(doc(db, 'games', gameId, 'predictions', predictionId));
+}
+
+export async function setReaction(
+  gameId: string,
+  predictionId: string,
+  playerId: string,
+  emoji: ReactionEmoji | null,
+  currentEmoji: ReactionEmoji | null,
+): Promise<void> {
+  const ref = doc(db, 'games', gameId, 'predictions', predictionId);
+  const batch = writeBatch(db);
+  if (currentEmoji) {
+    batch.update(ref, { [`reactions.${currentEmoji}`]: arrayRemove(playerId) });
+  }
+  if (emoji) {
+    batch.update(ref, { [`reactions.${emoji}`]: arrayUnion(playerId) });
+  }
+  await batch.commit();
 }
 
 // ─── Start game ───────────────────────────────────────────────────────────────

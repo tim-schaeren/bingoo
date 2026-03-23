@@ -27,6 +27,9 @@ import {
 	startGame,
 	cancelGame,
 	leaveGame,
+	setReaction,
+	REACTION_EMOJIS,
+	type ReactionEmoji,
 } from '../../../lib/firestore';
 import { useGameStore } from '../../../store/gameStore';
 import { sendPushNotifications } from '../../../lib/notifications';
@@ -52,6 +55,9 @@ export default function LobbyScreen() {
 	const [starting, setStarting] = useState(false);
 	const [showWelcome, setShowWelcome] = useState(isHost);
 	const [showSubjectPicker, setShowSubjectPicker] = useState(false);
+	const [reactionPickerFor, setReactionPickerFor] = useState<string | null>(
+		null,
+	);
 
 	const inputRef = useRef<TextInput>(null);
 	const autoSubmittedRef = useRef(false);
@@ -191,6 +197,23 @@ export default function LobbyScreen() {
 			autoSubmittedRef.current = false;
 			Alert.alert('Error', 'Could not submit. Try again.');
 		}
+	};
+
+	const handleReaction = async (
+		prediction: (typeof predictions)[0],
+		emoji: ReactionEmoji,
+	) => {
+		if (!playerId || !gameId) return;
+		const current =
+			(
+				Object.entries(prediction.reactions ?? {}) as [
+					ReactionEmoji,
+					string[],
+				][]
+			).find(([, uids]) => uids.includes(playerId))?.[0] ?? null;
+		const next = current === emoji ? null : emoji;
+		setReactionPickerFor(null);
+		await setReaction(gameId, prediction.id, playerId, next, current);
 	};
 
 	const handleDeletePrediction = (predictionId: string) => {
@@ -360,28 +383,92 @@ export default function LobbyScreen() {
 					{visiblePredictions.length > 0 && (
 						<View style={styles.section}>
 							<View style={styles.poolGrid}>
-							{visiblePredictions.map((p) => (
-								<View key={p.id} style={styles.poolItem}>
-									<View style={styles.poolItemHeader}>
-										<Text style={styles.poolAbout}>
-											{getPlayerName(p.subjectId)}
-										</Text>
-										{p.authorId === playerId && !submitted && (
+								{visiblePredictions.map((p) => {
+									const myReaction =
+										(
+											Object.entries(p.reactions ?? {}) as [
+												ReactionEmoji,
+												string[],
+											][]
+										).find(([, uids]) => uids.includes(playerId!))?.[0] ?? null;
+									const allReactions = (
+										Object.entries(p.reactions ?? {}) as [
+											ReactionEmoji,
+											string[],
+										][]
+									)
+										.map(([emoji, uids]) => ({ emoji, count: uids.length }))
+									.filter(({ count }) => count > 0);
+									const showPicker = reactionPickerFor === p.id;
+									return (
+										<View key={p.id} style={styles.poolItem}>
+											<View style={styles.poolItemHeader}>
+												<Text style={styles.poolAbout}>
+													{getPlayerName(p.subjectId)}
+												</Text>
+												{p.authorId === playerId && !submitted && (
+													<TouchableOpacity
+														onPress={() => handleDeletePrediction(p.id)}
+													>
+														<Text style={styles.poolDelete}>✕</Text>
+													</TouchableOpacity>
+												)}
+											</View>
+											<Text style={styles.poolText}>{p.text}</Text>
+											<Text style={styles.poolAuthor}>
+												{p.authorId === playerId
+													? 'by you'
+													: `by ${getPlayerName(p.authorId)}`}
+											</Text>
+								<View style={styles.reactionRow}>
+									{allReactions.map(({ emoji, count }) => {
+										const isMine = myReaction === emoji;
+										return isMine ? (
 											<TouchableOpacity
-												onPress={() => handleDeletePrediction(p.id)}
+												key={emoji}
+												style={styles.reactionAddButton}
+												onPress={() => setReactionPickerFor(showPicker ? null : p.id)}
 											>
-												<Text style={styles.poolDelete}>✕</Text>
+												<Text style={styles.reactionAddText}>{emoji} {count}</Text>
 											</TouchableOpacity>
-										)}
-									</View>
-									<Text style={styles.poolText}>{p.text}</Text>
-									<Text style={styles.poolAuthor}>
-										{p.authorId === playerId
-											? 'by you'
-											: `by ${getPlayerName(p.authorId)}`}
-									</Text>
+										) : (
+											<View key={emoji} style={styles.reactionPill}>
+												<Text style={styles.reactionPillText}>{emoji} {count}</Text>
+											</View>
+										);
+									})}
+									{!myReaction && (
+										<TouchableOpacity
+											style={styles.reactionAddButton}
+											onPress={() => setReactionPickerFor(showPicker ? null : p.id)}
+										>
+											<Text style={styles.reactionAddText}>+</Text>
+										</TouchableOpacity>
+									)}
 								</View>
-							))}
+											{showPicker && (
+												<View style={styles.reactionPicker}>
+													{REACTION_EMOJIS.map((emoji) => (
+														<TouchableOpacity
+															key={emoji}
+															onPress={() => handleReaction(p, emoji)}
+														>
+															<Text
+																style={[
+																	styles.reactionOption,
+																	myReaction === emoji &&
+																		styles.reactionOptionActive,
+																]}
+															>
+																{emoji}
+															</Text>
+														</TouchableOpacity>
+													))}
+												</View>
+											)}
+										</View>
+									);
+								})}
 							</View>
 						</View>
 					)}
@@ -391,7 +478,7 @@ export default function LobbyScreen() {
 						<Text style={styles.waitingForPlayers}>
 							{players.length === 1
 								? 'Share the code above to invite your friends!'
-								: `Need ${MIN_PLAYERS - players.length} more player${MIN_PLAYERS - players.length > 1 ? 's' : ''} before writing starts.`}
+								: `You need at least ${MIN_PLAYERS - players.length} more player${MIN_PLAYERS - players.length > 1 ? 's' : ''}.`}
 						</Text>
 					) : !submitted ? (
 						<View style={styles.section}>
@@ -698,6 +785,7 @@ const styles = StyleSheet.create({
 		backgroundColor: colors.surface,
 		borderRadius: radius.md,
 		padding: spacing.md,
+		paddingBottom: spacing.md + 20,
 		borderWidth: 1,
 		borderColor: colors.border,
 		gap: 2,
@@ -720,6 +808,47 @@ const styles = StyleSheet.create({
 	},
 	poolText: { fontSize: fontSize.md, color: colors.text },
 	poolAuthor: { fontSize: fontSize.sm, color: colors.textLight, marginTop: 2 },
+
+	reactionRow: {
+		position: 'absolute',
+		bottom: spacing.sm,
+		right: spacing.sm,
+		flexDirection: 'row',
+		flexWrap: 'wrap',
+		justifyContent: 'flex-end',
+		alignItems: 'center',
+		gap: spacing.xs,
+	},
+	reactionPill: {
+		backgroundColor: colors.surface,
+		borderRadius: radius.full,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: 2,
+		borderWidth: 1,
+		borderColor: colors.border,
+	},
+	reactionPillText: { fontSize: fontSize.sm },
+	reactionAddButton: {
+		borderRadius: radius.full,
+		paddingHorizontal: spacing.sm,
+		paddingVertical: 2,
+		borderWidth: 1,
+		borderColor: colors.border,
+		backgroundColor: colors.background,
+	},
+	reactionAddText: { fontSize: fontSize.sm, color: colors.textLight },
+	reactionPicker: {
+		flexDirection: 'row',
+		justifyContent: 'space-around',
+		backgroundColor: colors.surface,
+		borderRadius: radius.md,
+		paddingVertical: spacing.xs,
+		borderWidth: 1,
+		borderColor: colors.border,
+		marginTop: spacing.xs,
+	},
+	reactionOption: { fontSize: 20 },
+	reactionOptionActive: { opacity: 0.4 },
 
 	// Progress indicators
 	progressRow: {
