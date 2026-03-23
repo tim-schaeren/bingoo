@@ -179,7 +179,7 @@ export default function HomeScreen() {
 									<TouchableOpacity
 										onPress={() =>
 											Alert.alert(
-												'Leave game?',
+												'leave?',
 												'You will permanently lose your spot in this game and cannot rejoin.',
 												[
 													{ text: 'Stay', style: 'cancel' },

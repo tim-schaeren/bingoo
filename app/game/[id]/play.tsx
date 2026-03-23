@@ -119,8 +119,12 @@ export default function PlayScreen() {
 	const getPrediction = (predictionId: string) =>
 		predictions.find((p) => p.id === predictionId);
 
-	const getPredictionText = (predictionId: string) =>
-		getPrediction(predictionId)?.text ?? '…';
+	const getPredictionText = (predictionId: string) => {
+		const pred = getPrediction(predictionId);
+		if (!pred) return '…';
+		const subjectName = getPlayerName(pred.subjectId);
+		return `${subjectName} ${pred.text}`;
+	};
 
 	const getPlayerName = (pid: string | undefined) =>
 		players.find((p) => p.id === pid)?.nickname ?? '…';
