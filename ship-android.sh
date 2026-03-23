@@ -16,6 +16,9 @@ if [ ! -f google-play-key.json ]; then
   exit 1
 fi
 
+export ANDROID_HOME=$HOME/Library/Android/sdk
+export JAVA_HOME=$(/usr/libexec/java_home -v 17)
+
 echo "▶ Building..."
 EAS_BUILD_NO_EXPO_GO_WARNING=true eas build --platform android --profile production --local
 
