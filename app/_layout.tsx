@@ -11,12 +11,10 @@ import { useGameStore } from '../store/gameStore';
 import { registerForPushNotifications } from '../lib/notifications';
 import { savePushToken } from '../lib/firestore';
 
-async function waitForHydration(timeoutMs = 2000): Promise<void> {
+async function waitForHydration(): Promise<void> {
   if (useGameStore.persist.hasHydrated()) return;
   return new Promise(resolve => {
-    const timer = setTimeout(resolve, timeoutMs);
     const unsub = useGameStore.persist.onFinishHydration(() => {
-      clearTimeout(timer);
       unsub();
       resolve();
     });
