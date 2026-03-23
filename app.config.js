@@ -43,6 +43,9 @@ export default {
     },
     plugins: ['expo-router'],
     extra: {
+      // These values are bundled into the app binary and are visible to anyone
+      // who inspects the build. This is standard for React Native + Firebase.
+      // Firestore security rules are the actual security layer — not these keys.
       firebaseApiKey: process.env.FIREBASE_API_KEY,
       firebaseAuthDomain: process.env.FIREBASE_AUTH_DOMAIN,
       firebaseProjectId: process.env.FIREBASE_PROJECT_ID,
