@@ -99,7 +99,7 @@ service cloud.firestore {
 
         allow delete: if
           request.auth != null
-          && request.auth.uid == resource.data.authorId
+          && (request.auth.uid == resource.data.authorId || request.auth.uid == resource.data.subjectId)
           && isLobby(gameId);
       }
 

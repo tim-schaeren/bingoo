@@ -262,6 +262,12 @@ export async function cancelGame(gameId: string): Promise<void> {
 }
 
 export async function leaveGame(gameId: string, playerId: string): Promise<void> {
-  await deleteDoc(doc(db, 'games', gameId, 'players', playerId));
+  const predictionsSnap = await getDocs(
+    query(collection(db, 'games', gameId, 'predictions'), where('subjectId', '==', playerId))
+  );
+  const batch = writeBatch(db);
+  predictionsSnap.docs.forEach((d) => batch.delete(d.ref));
+  batch.delete(doc(db, 'games', gameId, 'players', playerId));
+  await batch.commit();
 }
 
