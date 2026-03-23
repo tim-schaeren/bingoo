@@ -11,6 +11,7 @@ service cloud.firestore {
     function isLobby(gameId)  { return gameData(gameId).status == 'lobby'; }
     function isActive(gameId) { return gameData(gameId).status == 'active'; }
     function isHost(gameId)   { return request.auth.uid == gameData(gameId).hostId; }
+    function isPlayer(gameId) { return exists(/databases/$(database)/documents/games/$(gameId)/players/$(request.auth.uid)); }
 
     // ─── Games ─────────────────────────────────────────────────────────────────
 
@@ -46,7 +47,9 @@ service cloud.firestore {
       // ─── Players ─────────────────────────────────────────────────────────────
 
       match /players/{playerId} {
-        allow read: if true;
+        allow read: if
+          request.auth != null
+          && exists(/databases/$(database)/documents/games/$(gameId)/players/$(request.auth.uid));
 
         allow create: if
           request.auth != null
@@ -95,6 +98,7 @@ service cloud.firestore {
         allow update: if
           request.auth != null
           && isLobby(gameId)
+          && isPlayer(gameId)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']);
 
         allow delete: if

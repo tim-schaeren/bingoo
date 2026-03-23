@@ -1,7 +1,8 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
-const PROJECT_ID = '206cbb27-b38a-462e-b5fa-672de4ad55c8';
+const PROJECT_ID = Constants.expoConfig?.extra?.eas?.projectId as string;
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 Notifications.setNotificationHandler({

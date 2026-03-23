@@ -33,7 +33,6 @@ export default {
       intentFilters: [
         {
           action: 'VIEW',
-          autoVerify: true,
           data: [{ scheme: 'bingoo' }],
           category: ['BROWSABLE', 'DEFAULT'],
         },
