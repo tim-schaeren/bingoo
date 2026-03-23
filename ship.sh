@@ -10,7 +10,7 @@ else
 fi
 
 echo "▶ Building..."
-eas build --platform ios --profile production --local
+EAS_BUILD_NO_EXPO_GO_WARNING=true eas build --platform ios --profile production --local
 
 # Find the IPA that was just produced
 IPA=$(ls -t build-*.ipa 2>/dev/null | head -1)

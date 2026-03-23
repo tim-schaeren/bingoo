@@ -10,8 +10,13 @@
       }
     },
     "production": {
+      "developmentClient": false,
       "ios": {
         "distribution": "store"
+      },
+      "android": {
+        "distribution": "store",
+        "buildType": "app-bundle"
       }
     }
   },
@@ -26,6 +31,10 @@
       "ios": {
         "appleId": "jd2b74yhyx@privaterelay.appleid.com",
         "ascAppId": "6760972106"
+      },
+      "android": {
+        "serviceAccountKeyPath": "./google-play-key.json",
+        "track": "internal"
       }
     }
   }
