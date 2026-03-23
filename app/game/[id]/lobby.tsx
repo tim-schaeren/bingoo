@@ -69,6 +69,7 @@ export default function LobbyScreen() {
 				setGame(g);
 				if (g.status === 'active') router.replace(`/game/${gameId}/play`);
 				if (g.status === 'cancelled') {
+					useGameStore.getState().reset();
 					if (isHost) {
 						router.replace('/');
 					} else {
