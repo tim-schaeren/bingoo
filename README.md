@@ -21,7 +21,8 @@ A social prediction bingo game for iOS and Android. Players write predictions ab
 | Framework      | React Native + Expo SDK 54                                 |
 | Navigation     | Expo Router (file-based)                                   |
 | Backend        | Firebase Firestore (real-time) + Firebase Auth (anonymous) |
-| State          | Zustand                                                    |
+| State          | Zustand + AsyncStorage (session persistence)               |
+| Notifications  | Expo Push Notifications                                    |
 | Build / Deploy | EAS Build (local) + EAS Submit → TestFlight                |
 
 ---
@@ -31,35 +32,50 @@ A social prediction bingo game for iOS and Android. Players write predictions ab
 ```
 bingoo/
 ├── app/                        # Expo Router screens
-│   ├── _layout.tsx             # Root layout (auth init)
-│   ├── index.tsx               # Home screen (create / join)
+│   ├── _layout.tsx             # Root layout: auth init, hydration, push tokens, offline banner
+│   ├── index.tsx               # Home screen (create / join / resume)
 │   ├── join/
 │   │   └── [code].tsx          # Deep-link handler (bingoo://join/XXXXXX)
 │   └── game/
 │       └── [id]/
-│           ├── _layout.tsx     # Game layout
-│           ├── lobby.tsx       # Lobby: prediction pool, player list, start game
+│           ├── _layout.tsx     # Game layout (disables swipe-back gesture)
+│           ├── lobby.tsx       # Lobby: orchestrates prediction writing and game start
 │           ├── play.tsx        # Active game: bingo card, mark predictions, live feed
 │           └── winner.tsx      # Winner screen: winner banner + card carousel
+│
+├── components/
+│   ├── ErrorBoundary.tsx       # Catches render errors, shows "return home" button
+│   ├── OfflineBanner.tsx       # Floating banner shown when device has no connection
+│   └── lobby/                  # Sub-components extracted from lobby.tsx
+│       ├── PlayerList.tsx
+│       ├── PredictionCard.tsx
+│       ├── SubjectPickerModal.tsx
+│       └── WelcomeModal.tsx
 │
 ├── lib/
 │   ├── firebase.ts             # Firebase app initialisation
 │   ├── auth.ts                 # Anonymous auth (ensureSignedIn, currentUid)
 │   ├── firestore.ts            # All Firestore reads/writes/listeners + data types
-│   └── gameLogic.ts            # Pure functions: card generation, win detection, grid sizing
+│   ├── gameLogic.ts            # Pure functions: card generation, win detection, grid sizing
+│   ├── notifications.ts        # Push notification registration and sending
+│   └── feedback.ts             # Haptic + audio feedback helpers
 │
 ├── store/
-│   └── gameStore.ts            # Zustand store: session + live game state
+│   └── gameStore.ts            # Zustand store: session fields persisted, live data transient
 │
 ├── constants/
 │   └── theme.ts                # Colors, spacing, radius, font sizes
 │
-├── assets/                     # Icons, splash screen, favicon
+├── __tests__/
+│   └── gameLogic.test.ts       # Unit tests for card generation and win detection
+│
+├── assets/                     # Icons, splash screen, favicon, sounds
 ├── firestore.rules             # Firestore security rules
-├── app.config.js               # Expo config (bundle ID, build number, Firebase env vars)
+├── app.config.js               # Expo config (bundle ID, deep links, Firebase env vars)
 ├── eas.json                    # EAS Build + Submit profiles
 ├── metro.config.js             # Metro bundler config (Firebase RN compatibility)
-└── ship.sh                     # One-command build + TestFlight deployment
+├── ship.sh                     # Build iOS IPA + submit to TestFlight
+└── ship-android.sh             # Build Android AAB + submit to Play Store
 ```
 
 ---
@@ -80,12 +96,14 @@ games/{gameId}
     nickname               string
     predictionsSubmitted   boolean
     joinedAt               timestamp
+    pushToken              string?      — Expo push token, refreshed on foreground
 
   /predictions/{predictionId}
     authorId      string       — who wrote it
     subjectId     string       — who it's about
     text          string       — max 120 chars
     createdAt     timestamp
+    reactions     object?      — { "😂": [uid, ...], "🔥": [...], ... }
 
   /cards/{playerId}
     grid          string[]     — flat array of predictionIds, length = gridSize²
@@ -104,7 +122,7 @@ games/{gameId}
 
 **Card generation** (`generateCards`): each player's card is a shuffled subset of the predictions they can see (all predictions not about them), truncated to `gridSize²` cells. Cards are written to Firestore by the host at game start and never change.
 
-**Win detection** (`getWinningLine`): runs client-side on every marks update. Checks all rows, columns, and both diagonals. When a player detects they've won, they call `announceWinner` which uses Firestore `arrayUnion` to append to the `winners` array — safe for concurrent winners.
+**Win detection** (`getWinningLine`): runs client-side on every marks update. Checks all rows, columns, and both diagonals. When a player detects they've won, they call `announceWinner` which uses Firestore `arrayUnion` to append to the `winners` array — safe for concurrent winners. All game logic functions are covered by unit tests (`npm test`).
 
 **Game codes** (`generateGameCode`): 6 characters from the alphabet `ABCDEFGHJKMNPQRSTUVWXYZ23456789` — ambiguous characters (0, O, I, 1, L) are excluded to avoid confusion when sharing verbally.
 
@@ -113,8 +131,8 @@ games/{gameId}
 ## Security rules (`firestore.rules`)
 
 - **Games**: anyone can read; only the creator can start or cancel; any authenticated player can append themselves to `winners` when the game is active or already finished.
-- **Players**: players can join/leave in lobby; only the player themselves or the host can update `predictionsSubmitted`.
-- **Predictions**: authors can create (in lobby only) and delete their own; no updates.
+- **Players**: readable only by authenticated members of the same game (protects push tokens from public access); players can join/leave in lobby; only the player themselves or the host can update `predictionsSubmitted`.
+- **Predictions**: authors can create (in lobby only) and delete their own; reaction updates (`reactions` field only) are allowed for any game member during lobby.
 - **Cards**: only the host can write; no updates or deletes.
 - **Marks**: any authenticated player can create a mark during an active game; no updates or deletes.
 
@@ -167,6 +185,12 @@ Scan the QR code with [Expo Go](https://expo.dev/go) (iOS or Android).
 
 > **Note:** The Metro config sets `unstable_enablePackageExports = false` — this is required for Firebase to bundle correctly with React Native.
 
+### 5. Run tests
+
+```bash
+npm test
+```
+
 ---
 
 ## Shipping to TestFlight
@@ -188,8 +212,15 @@ Then ship:
 This script:
 
 1. Sources `.env` for local Firebase config
-2. Auto-increments the iOS build number in `app.config.js` and commits it
-3. Builds the IPA locally via `eas build --local`
-4. Submits to TestFlight via `eas submit`
+2. Builds the IPA locally via `eas build --local`
+3. Submits to TestFlight via `eas submit`
+
+For Android:
+
+```bash
+./ship-android.sh
+```
+
+Builds an AAB via EAS and submits to the Play Store internal track.
 
 Check App Store Connect → TestFlight ~10 minutes after the script completes.
