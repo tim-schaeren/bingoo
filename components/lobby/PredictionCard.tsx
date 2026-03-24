@@ -1,17 +1,17 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Prediction, REACTION_EMOJIS, ReactionEmoji } from '../../lib/firestore';
 import { colors, spacing, radius, fontSize } from '../../constants/theme';
+import { feedbackSelection } from '../../lib/feedback';
 
 interface Props {
   prediction: Prediction;
   playerId: string;
   submitted: boolean;
   getPlayerName: (pid: string | undefined) => string;
-  onDelete: (predictionId: string) => void;
-  onReport: (prediction: Prediction) => void;
   onReact: (prediction: Prediction, emoji: ReactionEmoji) => void;
   reactionPickerOpen: boolean;
   onTogglePicker: () => void;
+  onOpenActions: (prediction: Prediction) => void;
 }
 
 export function PredictionCard({
@@ -19,11 +19,10 @@ export function PredictionCard({
   playerId,
   submitted,
   getPlayerName,
-  onDelete,
-  onReport,
   onReact,
   reactionPickerOpen,
   onTogglePicker,
+  onOpenActions,
 }: Props) {
   const myReaction =
     (Object.entries(prediction.reactions ?? {}) as [ReactionEmoji, string[]][]).find(
@@ -35,21 +34,17 @@ export function PredictionCard({
     .filter(({ count }) => count > 0);
 
   return (
-    <View style={styles.card}>
+    <TouchableOpacity
+      style={styles.card}
+      activeOpacity={0.85}
+      onLongPress={() => {
+        feedbackSelection();
+        onOpenActions(prediction);
+      }}
+      delayLongPress={250}
+    >
       <View style={styles.header}>
         <Text style={styles.about}>{getPlayerName(prediction.subjectId)}</Text>
-        <View style={styles.headerActions}>
-          {prediction.authorId === playerId && !submitted && (
-            <TouchableOpacity onPress={() => onDelete(prediction.id)}>
-              <Text style={styles.delete}>✕</Text>
-            </TouchableOpacity>
-          )}
-          {prediction.authorId !== playerId && (
-            <TouchableOpacity onPress={() => onReport(prediction)}>
-              <Text style={styles.report}>report</Text>
-            </TouchableOpacity>
-          )}
-        </View>
       </View>
       <Text style={styles.text}>{prediction.text}</Text>
       <Text style={styles.author}>
@@ -87,7 +82,7 @@ export function PredictionCard({
           ))}
         </View>
       )}
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -103,10 +98,7 @@ const styles = StyleSheet.create({
     width: '48%',
   },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   about: { fontSize: fontSize.sm, color: colors.primary, fontWeight: '700' },
-  delete: { color: colors.textLight, fontSize: fontSize.md, paddingLeft: spacing.sm },
-  report: { color: colors.textLight, fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
   text: { fontSize: fontSize.md, color: colors.text },
   author: { fontSize: fontSize.sm, color: colors.textLight, marginTop: 2 },
 

@@ -20,7 +20,7 @@ import { getDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import Constants from 'expo-constants';
 import { colors, spacing, radius, fontSize } from '../constants/theme';
-import { createGame, getGameByCode, joinGame, leaveGame } from '../lib/firestore';
+import { createGame, getGameByCode, isGameBannedError, joinGame, leaveGame } from '../lib/firestore';
 import { useGameStore } from '../store/gameStore';
 
 const PRIVACY_POLICY_URL = 'https://tim-schaeren.github.io/bingoo/privacy-policy.html';
@@ -60,6 +60,13 @@ export default function HomeScreen() {
 
 	const { setSession, pushToken, gameId, playerId, reset } = useGameStore();
 
+	const clearRemovedSession = () => {
+		reset();
+		Alert.alert('Removed from game', 'The host of the game removed you.', [
+			{ text: 'OK' },
+		]);
+	};
+
 	const iconAnim = useRef(new Animated.Value(1)).current;
 
 	useEffect(() => {
@@ -83,11 +90,34 @@ export default function HomeScreen() {
 				return;
 			}
 			const status = snap.data().status;
+			if (!playerId) {
+				reset();
+				return;
+			}
+
+			if (status === 'lobby' || status === 'active' || status === 'finished') {
+				try {
+					await getDoc(doc(db, 'games', gameId, 'players', playerId));
+				} catch (error) {
+					const code = error instanceof Error && 'code' in error ? (error as Error & { code?: string }).code : undefined;
+					if (code === 'permission-denied') {
+						clearRemovedSession();
+						return;
+					}
+					throw error;
+				}
+			}
+
 			if (status === 'lobby') router.replace(`/game/${gameId}/lobby`);
 			else if (status === 'active') router.replace(`/game/${gameId}/play`);
 			else if (status === 'finished') router.replace(`/game/${gameId}/winner`);
 			else reset();
-		} catch {
+		} catch (error) {
+			const code = error instanceof Error && 'code' in error ? (error as Error & { code?: string }).code : undefined;
+			if (code === 'permission-denied') {
+				clearRemovedSession();
+				return;
+			}
 			Alert.alert('Error', 'Could not resume game. Check your connection.');
 		} finally {
 			setLoading(false);
@@ -163,7 +193,11 @@ export default function HomeScreen() {
 			const { playerId } = await joinGame(game.id, nickname.trim(), pushToken);
 			setSession(playerId, nickname.trim(), game.id, false);
 			router.replace(`/game/${game.id}/lobby`);
-		} catch {
+		} catch (error) {
+			if (isGameBannedError(error)) {
+				Alert.alert('Removed from game', error.message);
+				return;
+			}
 			Alert.alert(
 				'Error',
 				'Could not join game. Check your connection and try again.',
@@ -188,10 +222,24 @@ export default function HomeScreen() {
 			}
 
 			if (snap.data().status === 'lobby') {
-				await leaveGame(gameId, playerId);
+				try {
+					await leaveGame(gameId, playerId);
+				} catch (error) {
+					const code = error instanceof Error && 'code' in error ? (error as Error & { code?: string }).code : undefined;
+					if (code === 'permission-denied') {
+						reset();
+						return;
+					}
+					throw error;
+				}
 			}
 			reset();
-		} catch {
+		} catch (error) {
+			const code = error instanceof Error && 'code' in error ? (error as Error & { code?: string }).code : undefined;
+			if (code === 'permission-denied') {
+				reset();
+				return;
+			}
 			Alert.alert('Error', 'Could not leave the saved game. Check your connection.');
 		} finally {
 			setLoading(false);

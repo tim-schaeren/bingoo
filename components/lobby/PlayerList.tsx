@@ -6,24 +6,30 @@ interface Props {
   players: Player[];
   playerId: string;
   hostId: string;
-  onReportPlayer?: (player: Player) => void;
-  onRemovePlayer?: (player: Player) => void;
   statusLabel?: (player: Player) => string;
+  onPressPlayer?: (player: Player) => void;
 }
 
 export function PlayerList({
   players,
   playerId,
   hostId,
-  onReportPlayer,
-  onRemovePlayer,
   statusLabel,
+  onPressPlayer,
 }: Props) {
   return (
     <View style={styles.container}>
       <Text style={styles.meta}>{players.length} players</Text>
       {players.map((p) => (
-        <View key={p.id} style={styles.row}>
+        <TouchableOpacity
+          key={p.id}
+          style={styles.row}
+          onPress={() => {
+            if (p.id !== playerId) onPressPlayer?.(p);
+          }}
+          disabled={p.id === playerId || !onPressPlayer}
+          activeOpacity={0.75}
+        >
           <View style={styles.nameRow}>
             <Text style={styles.name}>{p.nickname}</Text>
             {p.id === playerId && (
@@ -46,18 +52,8 @@ export function PlayerList({
             >
               {statusLabel ? statusLabel(p) : p.predictionsSubmitted ? 'Done ✓' : 'Writing…'}
             </Text>
-            {p.id !== playerId && onReportPlayer && (
-              <TouchableOpacity onPress={() => onReportPlayer(p)}>
-                <Text style={styles.report}>report</Text>
-              </TouchableOpacity>
-            )}
-            {p.id !== playerId && p.id !== hostId && onRemovePlayer && (
-              <TouchableOpacity onPress={() => onRemovePlayer(p)}>
-                <Text style={styles.remove}>remove</Text>
-              </TouchableOpacity>
-            )}
           </View>
-        </View>
+        </TouchableOpacity>
       ))}
     </View>
   );
@@ -101,6 +97,4 @@ const styles = StyleSheet.create({
   pillHostText: { fontSize: 11, fontWeight: '700', color: colors.primary },
   status: { fontSize: fontSize.sm, color: colors.textLight },
   statusDone: { color: colors.success, fontWeight: '600' },
-  report: { fontSize: 11, color: colors.textLight, fontWeight: '700', textTransform: 'uppercase' },
-  remove: { fontSize: 11, color: colors.error, fontWeight: '700', textTransform: 'uppercase' },
 });

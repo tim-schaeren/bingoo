@@ -13,7 +13,7 @@ import {
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, radius, fontSize } from '../../constants/theme';
-import { getGameByCode, joinGame } from '../../lib/firestore';
+import { getGameByCode, isGameBannedError, joinGame } from '../../lib/firestore';
 import { useGameStore } from '../../store/gameStore';
 
 const PRIVACY_POLICY_URL = 'https://tim-schaeren.github.io/bingoo/privacy-policy.html';
@@ -53,7 +53,11 @@ export default function JoinByLinkScreen() {
       const { playerId } = await joinGame(game.id, nickname.trim());
       setSession(playerId, nickname.trim(), game.id, false);
       router.replace(`/game/${game.id}/lobby`);
-    } catch {
+    } catch (error) {
+      if (isGameBannedError(error)) {
+        Alert.alert('Removed from game', error.message);
+        return;
+      }
       Alert.alert('Error', 'Could not join. Check your connection and try again.');
     } finally {
       setLoading(false);

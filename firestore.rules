@@ -12,6 +12,9 @@ service cloud.firestore {
     function isActive(gameId) { return gameData(gameId).status == 'active'; }
     function isHost(gameId)   { return request.auth.uid == gameData(gameId).hostId; }
     function isPlayer(gameId) { return exists(/databases/$(database)/documents/games/$(gameId)/players/$(request.auth.uid)); }
+    function isBanned(gameId, playerId) {
+      return exists(/databases/$(database)/documents/games/$(gameId)/bannedPlayers/$(playerId));
+    }
     function playerExists(gameId, playerId) {
       return exists(/databases/$(database)/documents/games/$(gameId)/players/$(playerId));
     }
@@ -75,6 +78,7 @@ service cloud.firestore {
           request.auth != null
           && request.auth.uid == playerId
           && isLobby(gameId)
+          && !isBanned(gameId, playerId)
           && request.resource.data.keys().hasOnly(['nickname', 'predictionsSubmitted', 'joinedAt', 'pushToken'])
           && request.resource.data.predictionsSubmitted == false
           && request.resource.data.nickname.size() > 0
@@ -184,6 +188,26 @@ service cloud.firestore {
           && request.resource.data.reason in ['harassment', 'sexual_content', 'hate_speech', 'spam', 'other'];
 
         allow read, update, delete: if false;
+      }
+
+      // ─── Banned players ──────────────────────────────────────────────────────
+
+      match /bannedPlayers/{playerId} {
+        allow read: if
+          request.auth != null
+          && (request.auth.uid == playerId || isHost(gameId));
+
+        allow create: if
+          request.auth != null
+          && isHost(gameId)
+          && request.resource.data.keys().hasOnly(['bannedAt', 'bannedBy'])
+          && request.resource.data.bannedBy == request.auth.uid;
+
+        allow update: if false;
+
+        allow delete: if
+          request.auth != null
+          && isHost(gameId);
       }
     }
   }

@@ -26,7 +26,7 @@ import {
 	startGame,
 	cancelGame,
 	leaveGame,
-	removePlayerFromGame,
+	banPlayerFromGame,
 	reportPlayer,
 	reportPrediction,
 	setReaction,
@@ -43,6 +43,7 @@ import { PredictionCard } from '../../../components/lobby/PredictionCard';
 import { SubjectPickerModal } from '../../../components/lobby/SubjectPickerModal';
 import { WelcomeModal } from '../../../components/lobby/WelcomeModal';
 import { ReportModal } from '../../../components/ReportModal';
+import { ActionModal } from '../../../components/ActionModal';
 
 const PREDICTIONS_PER_PLAYER = 2;
 const MIN_PLAYERS = 3;
@@ -64,16 +65,32 @@ export default function LobbyScreen() {
 	const [reactionPickerFor, setReactionPickerFor] = useState<string | null>(null);
 	const [reportingPrediction, setReportingPrediction] = useState<Prediction | null>(null);
 	const [reportingPlayer, setReportingPlayer] = useState<Player | null>(null);
+	const [actionPrediction, setActionPrediction] = useState<Prediction | null>(null);
+	const [actionPlayer, setActionPlayer] = useState<Player | null>(null);
 
 	const inputRef = useRef<TextInput>(null);
 	const autoSubmittedRef = useRef(false);
 	const editingRef = useRef(false);
 	const wasRemovedRef = useRef(false);
 
+	const handleRemovedFromGame = () => {
+		if (wasRemovedRef.current) return;
+		wasRemovedRef.current = true;
+		useGameStore.getState().reset();
+		Alert.alert('Removed from game', 'The host of the game removed you.', [
+			{ text: 'OK', onPress: () => router.replace('/') },
+		]);
+	};
+
 	useEffect(() => {
 		if (!gameId) return;
-		const onListenerError = () =>
+		const onListenerError = (error: Error & { code?: string }) => {
+			if (error.code === 'permission-denied') {
+				handleRemovedFromGame();
+				return;
+			}
 			Alert.alert('Connection error', 'Lost connection to game. Check your internet.');
+		};
 		const unsubs = [
 			listenToGame(gameId, (g) => {
 				setGame(g);
@@ -98,11 +115,7 @@ export default function LobbyScreen() {
 	useEffect(() => {
 		if (!playerId || players.length === 0 || wasRemovedRef.current) return;
 		if (players.some((p) => p.id === playerId)) return;
-		wasRemovedRef.current = true;
-		useGameStore.getState().reset();
-		Alert.alert('Removed from game', 'The host removed you from this game.', [
-			{ text: 'OK', onPress: () => router.replace('/') },
-		]);
+		handleRemovedFromGame();
 	}, [players, playerId]);
 
 	const otherPlayers = players.filter((p) => p.id !== playerId);
@@ -271,14 +284,24 @@ export default function LobbyScreen() {
 					style: 'destructive',
 					onPress: async () => {
 						try {
-							await removePlayerFromGame(gameId, player.id, true);
-						} catch {
-							Alert.alert('Error', 'Could not remove this player. Try again.');
+							await banPlayerFromGame(gameId, player.id, true);
+						} catch (error) {
+							const message =
+								error instanceof Error ? error.message : 'Could not remove this player. Try again.';
+							Alert.alert('Error', message);
 						}
 					},
 				},
 			],
 		);
+	};
+
+	const handlePredictionAction = (prediction: Prediction) => {
+		setActionPrediction(prediction);
+	};
+
+	const handlePlayerAction = (player: Player) => {
+		setActionPlayer(player);
 	};
 
 	const handleStartGame = async () => {
@@ -389,8 +412,7 @@ export default function LobbyScreen() {
 						players={players}
 						playerId={playerId!}
 						hostId={game.hostId}
-						onReportPlayer={handleReportPlayer}
-						onRemovePlayer={isHost ? handleRemovePlayer : undefined}
+						onPressPlayer={handlePlayerAction}
 					/>
 
 					{/* Prediction pool */}
@@ -403,13 +425,12 @@ export default function LobbyScreen() {
 									playerId={playerId!}
 									submitted={submitted}
 									getPlayerName={getPlayerName}
-									onDelete={handleDeletePrediction}
-									onReport={handleReportPrediction}
 									onReact={handleReaction}
 									reactionPickerOpen={reactionPickerFor === p.id}
 									onTogglePicker={() =>
 										setReactionPickerFor(reactionPickerFor === p.id ? null : p.id)
 									}
+									onOpenActions={handlePredictionAction}
 								/>
 							))}
 						</View>
@@ -541,6 +562,57 @@ export default function LobbyScreen() {
 					setReportingPlayer(null);
 				}}
 				onSelect={handleSubmitReport}
+			/>
+
+			<ActionModal
+				visible={!!actionPrediction}
+				title="Prediction options"
+				subtitle={actionPrediction ? `"${actionPrediction.text}"` : undefined}
+				onClose={() => setActionPrediction(null)}
+				actions={
+					actionPrediction
+						? actionPrediction.authorId === playerId && !submitted
+							? [
+									{
+										label: 'Delete prediction',
+										tone: 'destructive' as const,
+										onPress: () => handleDeletePrediction(actionPrediction.id),
+									},
+							  ]
+							: [
+									{
+										label: 'Report prediction',
+										onPress: () => handleReportPrediction(actionPrediction),
+									},
+							  ]
+						: []
+				}
+			/>
+
+			<ActionModal
+				visible={!!actionPlayer}
+				title={actionPlayer?.nickname ?? 'Player options'}
+				subtitle="Choose an action."
+				onClose={() => setActionPlayer(null)}
+				actions={
+					actionPlayer
+						? [
+								{
+									label: 'Report player',
+									onPress: () => handleReportPlayer(actionPlayer),
+								},
+								...(isHost && actionPlayer.id !== game.hostId
+									? [
+											{
+												label: 'Remove from game',
+												tone: 'destructive' as const,
+												onPress: () => handleRemovePlayer(actionPlayer),
+											},
+									  ]
+									: []),
+						  ]
+						: []
+				}
 			/>
 
 			{/* Fixed bottom quit/leave */}

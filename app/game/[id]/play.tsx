@@ -21,8 +21,9 @@ import {
 	markPrediction,
 	announceWinner,
 	getCard,
-	removePlayerFromGame,
+	banPlayerFromGame,
 	reportPrediction,
+	type Prediction,
 	type Player,
 	type ReportReason,
 } from '../../../lib/firestore';
@@ -62,15 +63,30 @@ export default function PlayScreen() {
 	const [showHistory, setShowHistory] = useState(false);
 	const [showReportModal, setShowReportModal] = useState(false);
 	const [showPlayersModal, setShowPlayersModal] = useState(false);
+	const [reportingPrediction, setReportingPrediction] = useState<Prediction | null>(null);
 	const wasRemovedRef = useRef(false);
+
+	const handleRemovedFromGame = () => {
+		if (wasRemovedRef.current) return;
+		wasRemovedRef.current = true;
+		useGameStore.getState().reset();
+		Alert.alert('Removed from game', 'The host of the game removed you.', [
+			{ text: 'OK', onPress: () => router.replace('/') },
+		]);
+	};
 
 	const gridSize = game?.gridSize ?? 4;
 	const cellSize = (SCREEN_WIDTH - GRID_PADDING) / gridSize - spacing.xs;
 
 	useEffect(() => {
 		if (!gameId) return;
-		const onListenerError = () =>
+		const onListenerError = (error: Error & { code?: string }) => {
+			if (error.code === 'permission-denied') {
+				handleRemovedFromGame();
+				return;
+			}
 			Alert.alert('Connection error', 'Lost connection to game. Check your internet.');
+		};
 		const unsubs = [
 			listenToGame(gameId, (g) => {
 				setGame(g);
@@ -86,11 +102,7 @@ export default function PlayScreen() {
 	useEffect(() => {
 		if (!playerId || players.length === 0 || wasRemovedRef.current) return;
 		if (players.some((p) => p.id === playerId)) return;
-		wasRemovedRef.current = true;
-		useGameStore.getState().reset();
-		Alert.alert('Removed from game', 'The host removed you from this game.', [
-			{ text: 'OK', onPress: () => router.replace('/') },
-		]);
+		handleRemovedFromGame();
 	}, [players, playerId]);
 
 	// Load own card for display
@@ -193,14 +205,15 @@ export default function PlayScreen() {
 	};
 
 	const handleReportSelectedPrediction = async (reason: ReportReason) => {
-		if (!gameId || !playerId || !selectedPred) return;
+		if (!gameId || !playerId || !reportingPrediction) return;
 		try {
-			await reportPrediction(gameId, selectedPred.id, playerId, reason);
+			await reportPrediction(gameId, reportingPrediction.id, playerId, reason);
 			Alert.alert('Reported', 'Thanks. We will review it.');
 		} catch {
 			Alert.alert('Error', 'Could not send the report. Try again.');
 		} finally {
 			setShowReportModal(false);
+			setReportingPrediction(null);
 		}
 	};
 
@@ -216,9 +229,11 @@ export default function PlayScreen() {
 					style: 'destructive',
 					onPress: async () => {
 						try {
-							await removePlayerFromGame(gameId, player.id, false);
-						} catch {
-							Alert.alert('Error', 'Could not remove this player. Try again.');
+							await banPlayerFromGame(gameId, player.id, false);
+						} catch (error) {
+							const message =
+								error instanceof Error ? error.message : 'Could not remove this player. Try again.';
+							Alert.alert('Error', message);
 						}
 					},
 				},
@@ -370,7 +385,11 @@ export default function PlayScreen() {
 								)}
 								<TouchableOpacity
 									style={styles.reportButton}
-									onPress={() => setShowReportModal(true)}
+									onPress={() => {
+										setReportingPrediction(selectedPred);
+										setSelectedPredId(null);
+										setShowReportModal(true);
+									}}
 								>
 									<Text style={styles.reportButtonText}>Report</Text>
 								</TouchableOpacity>
@@ -414,7 +433,7 @@ export default function PlayScreen() {
 								players={players}
 								playerId={playerId!}
 								hostId={game!.hostId}
-								onRemovePlayer={handleRemovePlayer}
+								onPressPlayer={handleRemovePlayer}
 								statusLabel={() => 'Playing'}
 							/>
 						</ScrollView>

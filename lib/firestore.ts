@@ -74,6 +74,17 @@ export const REPORT_REASONS = [
 export type ReportReason = (typeof REPORT_REASONS)[number];
 export type ReportTargetType = 'prediction' | 'player';
 
+export class GameBannedError extends Error {
+  constructor() {
+    super("You were removed from this game and can't rejoin.");
+    this.name = 'GameBannedError';
+  }
+}
+
+export function isGameBannedError(error: unknown): error is GameBannedError {
+  return error instanceof GameBannedError;
+}
+
 // ─── Create ───────────────────────────────────────────────────────────────────
 
 export async function createGame(
@@ -107,7 +118,11 @@ export async function createGame(
 // ─── Join ─────────────────────────────────────────────────────────────────────
 
 export async function getGameByCode(code: string): Promise<Game | null> {
-  const q = query(collection(db, 'games'), where('code', '==', code.toUpperCase()));
+  const q = query(
+    collection(db, 'games'),
+    where('code', '==', code.toUpperCase()),
+    where('status', '==', 'lobby')
+  );
   const snap = await getDocs(q);
   if (snap.empty) return null;
   const d = snap.docs[0];
@@ -120,6 +135,10 @@ export async function joinGame(
   pushToken?: string | null,
 ): Promise<{ playerId: string }> {
   const playerId = currentUid();
+  const bannedSnap = await getDoc(doc(db, 'games', gameId, 'bannedPlayers', playerId));
+  if (bannedSnap.exists()) {
+    throw new GameBannedError();
+  }
   await setDoc(doc(db, 'games', gameId, 'players', playerId), {
     nickname,
     predictionsSubmitted: false,
@@ -321,7 +340,7 @@ export async function leaveGame(gameId: string, playerId: string): Promise<void>
   await batch.commit();
 }
 
-export async function removePlayerFromGame(
+export async function banPlayerFromGame(
   gameId: string,
   playerId: string,
   deletePredictions: boolean,
@@ -338,6 +357,10 @@ export async function removePlayerFromGame(
     asAuthor.docs.forEach((d) => batch.delete(d.ref));
   }
 
+  batch.set(doc(db, 'games', gameId, 'bannedPlayers', playerId), {
+    bannedAt: serverTimestamp(),
+    bannedBy: currentUid(),
+  });
   batch.delete(doc(db, 'games', gameId, 'players', playerId));
   await batch.commit();
 }
