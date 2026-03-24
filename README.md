@@ -23,7 +23,7 @@ A social prediction bingo game for iOS and Android. Players write predictions ab
 | Backend        | Firebase Firestore (real-time) + Firebase Auth (anonymous) |
 | State          | Zustand + AsyncStorage (session persistence)               |
 | Notifications  | Expo Push Notifications                                    |
-| Build / Deploy | EAS Build (local) + EAS Submit → TestFlight                |
+| Build / Deploy | EAS Build (local) + EAS Submit → TestFlight / Play Internal |
 
 ---
 
@@ -44,8 +44,10 @@ bingoo/
 │           └── winner.tsx      # Winner screen: winner banner + card carousel
 │
 ├── components/
+│   ├── ActionModal.tsx          # Reusable action sheet for report/remove actions
 │   ├── ErrorBoundary.tsx       # Catches render errors, shows "return home" button
 │   ├── OfflineBanner.tsx       # Floating banner shown when device has no connection
+│   ├── ReportModal.tsx         # Reason picker for reporting users/predictions
 │   └── lobby/                  # Sub-components extracted from lobby.tsx
 │       ├── PlayerList.tsx
 │       ├── PredictionCard.tsx
@@ -112,6 +114,18 @@ games/{gameId}
     markedBy          string   — playerId who marked it
     markedByNickname  string
     markedAt          timestamp
+
+  /reports/{reportId}
+    targetType        string       — "prediction" | "player"
+    targetId          string
+    reason            string       — harassment | sexual_content | hate_speech | spam | other
+    reporterId        string
+    status            string       — currently always "open"
+    createdAt         timestamp
+
+  /bannedPlayers/{playerId}
+    bannedAt          timestamp
+    bannedBy          string       — host UID
 ```
 
 ---
@@ -130,11 +144,13 @@ games/{gameId}
 
 ## Security rules (`firestore.rules`)
 
-- **Games**: anyone can read; only the creator can start or cancel; any authenticated player can append themselves to `winners` when the game is active or already finished.
-- **Players**: readable only by authenticated members of the same game (protects push tokens from public access); players can join/leave in lobby; only the player themselves or the host can update `predictionsSubmitted`.
-- **Predictions**: authors can create (in lobby only) and delete their own; reaction updates (`reactions` field only) are allowed for any game member during lobby.
-- **Cards**: only the host can write; no updates or deletes.
-- **Marks**: any authenticated player can create a mark during an active game; no updates or deletes.
+- **Games**: lobby games are queryable for joining by code; active/finished games are readable only by members. Only the host can start or cancel a lobby game. Members can append themselves to `winners` when the game is active/finished.
+- **Players**: readable only by members of the same game. Joining is allowed only in lobby and blocked if the player appears in `bannedPlayers`. Players can leave a lobby themselves; hosts can remove other players from a lobby or active game.
+- **Predictions**: readable only by members. Authors can create in lobby only, and any member can add/remove reactions during lobby. Authors, subjects, or the host can delete a prediction in lobby.
+- **Cards**: readable only by members; writable only by the host during lobby before the game starts.
+- **Marks**: readable only by members; creatable only during active play, and a player cannot mark a prediction about themselves.
+- **Reports**: members can create report records for players or predictions; report documents are not readable from the client.
+- **Banned players**: hosts can ban removed players from rejoining the same game; the banned player and the host can read that ban record.
 
 ---
 
@@ -183,6 +199,8 @@ npx expo start
 
 Scan the QR code with [Expo Go](https://expo.dev/go) (iOS or Android).
 
+> **Note:** Push notification behavior should be tested in a development build or production build, not relied on in Expo Go.
+
 > **Note:** The Metro config sets `unstable_enablePackageExports = false` — this is required for Firebase to bundle correctly with React Native.
 
 ### 5. Run tests
@@ -221,6 +239,6 @@ For Android:
 ./ship-android.sh
 ```
 
-Builds an AAB via EAS and submits to the Play Store internal track.
+Builds an AAB via EAS and submits to the Play Store internal testing track.
 
 Check App Store Connect → TestFlight ~10 minutes after the script completes.
