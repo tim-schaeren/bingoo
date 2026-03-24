@@ -25,6 +25,7 @@ import {
 	cancelGame,
 	getGameByCode,
 	isGameBannedError,
+	isGameFullError,
 	joinGame,
 	leaveGame,
 	type Game,
@@ -412,6 +413,10 @@ export default function HomeScreen() {
 		} catch (error) {
 			if (isGameBannedError(error)) {
 				Alert.alert('Removed from game', error.message);
+				return;
+			}
+			if (isGameFullError(error)) {
+				Alert.alert('Lobby full', error.message);
 				return;
 			}
 			Alert.alert(

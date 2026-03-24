@@ -3,6 +3,7 @@ import {
   doc,
   setDoc,
   getDoc,
+  getCountFromServer,
   getDocs,
   updateDoc,
   deleteDoc,
@@ -74,6 +75,7 @@ export const REPORT_REASONS = [
 ] as const;
 export type ReportReason = (typeof REPORT_REASONS)[number];
 export type ReportTargetType = 'prediction' | 'player';
+export const MAX_PLAYERS_PER_LOBBY = 9;
 
 export class GameBannedError extends Error {
   constructor() {
@@ -82,8 +84,19 @@ export class GameBannedError extends Error {
   }
 }
 
+export class GameFullError extends Error {
+  constructor() {
+    super(`This lobby is full. Up to ${MAX_PLAYERS_PER_LOBBY} players can join.`);
+    this.name = 'GameFullError';
+  }
+}
+
 export function isGameBannedError(error: unknown): error is GameBannedError {
   return error instanceof GameBannedError;
+}
+
+export function isGameFullError(error: unknown): error is GameFullError {
+  return error instanceof GameFullError;
 }
 
 // ─── Create ───────────────────────────────────────────────────────────────────
@@ -138,11 +151,26 @@ export async function joinGame(
   pushToken?: string | null,
 ): Promise<{ playerId: string }> {
   const playerId = currentUid();
-  const bannedSnap = await getDoc(doc(db, 'games', gameId, 'bannedPlayers', playerId));
+  const playerRef = doc(db, 'games', gameId, 'players', playerId);
+  const [bannedSnap, existingPlayerSnap] = await Promise.all([
+    getDoc(doc(db, 'games', gameId, 'bannedPlayers', playerId)),
+    getDoc(playerRef),
+  ]);
   if (bannedSnap.exists()) {
     throw new GameBannedError();
   }
-  await setDoc(doc(db, 'games', gameId, 'players', playerId), {
+  if (existingPlayerSnap.exists()) {
+    return { playerId };
+  }
+
+  const playerCount = (
+    await getCountFromServer(collection(db, 'games', gameId, 'players'))
+  ).data().count;
+  if (playerCount >= MAX_PLAYERS_PER_LOBBY) {
+    throw new GameFullError();
+  }
+
+  await setDoc(playerRef, {
     nickname,
     predictionsSubmitted: false,
     joinedAt: serverTimestamp(),
