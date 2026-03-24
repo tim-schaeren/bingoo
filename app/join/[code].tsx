@@ -214,7 +214,7 @@ const styles = StyleSheet.create({
   checkboxMark: { color: '#fff', fontWeight: '800', fontSize: 12 },
   policyTextWrap: { flex: 1, gap: spacing.xs },
   policyText: { fontSize: fontSize.sm, color: colors.textLight, lineHeight: 18 },
-  policyLinks: { flexDirection: 'row', gap: spacing.md, flexWrap: 'wrap' },
+  policyLinks: { alignItems: 'flex-start', gap: spacing.xs },
   policyLinkText: { fontSize: fontSize.sm, color: colors.primary, fontWeight: '600' },
   button: {
     backgroundColor: colors.primary,

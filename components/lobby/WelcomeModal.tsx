@@ -1,5 +1,6 @@
 import { Text, TouchableOpacity, Modal, StyleSheet, Share } from 'react-native';
 import { colors, spacing, radius, fontSize } from '../../constants/theme';
+import { buildInviteMessage } from '../../lib/invite';
 
 interface Props {
   visible: boolean;
@@ -10,7 +11,7 @@ interface Props {
 export function WelcomeModal({ visible, onClose, gameCode }: Props) {
   const handleShare = () => {
     Share.share({
-      message: `Join my bingoo!\nCode: ${gameCode}\nbingoo://join/${gameCode}`,
+      message: buildInviteMessage(gameCode),
     }).then(onClose);
   };
 

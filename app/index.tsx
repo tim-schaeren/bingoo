@@ -430,9 +430,12 @@ export default function HomeScreen() {
 
 	const renderHomeActions = () => (
 		<View style={styles.actions}>
-			<Text style={styles.sessionCount}>
-				{memberships.length}/{MAX_MEMBERSHIPS} games joined
-			</Text>
+			{!canAddMembership && (
+				<Text style={styles.sessionCount}>
+					You've reached the {MAX_MEMBERSHIPS}-game limit. Leave one to join or
+					create another.
+				</Text>
+			)}
 			<TouchableOpacity
 				style={[
 					styles.primaryButton,
@@ -851,7 +854,7 @@ const styles = StyleSheet.create({
 		color: colors.textLight,
 		lineHeight: 18,
 	},
-	policyLinks: { flexDirection: 'row', gap: spacing.md, flexWrap: 'wrap' },
+	policyLinks: { alignItems: 'flex-start', gap: spacing.xs },
 	policyLinkText: {
 		fontSize: fontSize.sm,
 		color: colors.primary,

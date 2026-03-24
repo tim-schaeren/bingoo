@@ -3,7 +3,6 @@ import {
   doc,
   setDoc,
   getDoc,
-  getCountFromServer,
   getDocs,
   updateDoc,
   deleteDoc,
@@ -152,22 +151,9 @@ export async function joinGame(
 ): Promise<{ playerId: string }> {
   const playerId = currentUid();
   const playerRef = doc(db, 'games', gameId, 'players', playerId);
-  const [bannedSnap, existingPlayerSnap] = await Promise.all([
-    getDoc(doc(db, 'games', gameId, 'bannedPlayers', playerId)),
-    getDoc(playerRef),
-  ]);
+  const bannedSnap = await getDoc(doc(db, 'games', gameId, 'bannedPlayers', playerId));
   if (bannedSnap.exists()) {
     throw new GameBannedError();
-  }
-  if (existingPlayerSnap.exists()) {
-    return { playerId };
-  }
-
-  const playerCount = (
-    await getCountFromServer(collection(db, 'games', gameId, 'players'))
-  ).data().count;
-  if (playerCount >= MAX_PLAYERS_PER_LOBBY) {
-    throw new GameFullError();
   }
 
   await setDoc(playerRef, {

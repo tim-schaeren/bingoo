@@ -38,6 +38,7 @@ import {
 import { useGameStore } from '../../../store/gameStore';
 import { sendPushNotifications } from '../../../lib/notifications';
 import { feedbackDone, feedbackStart } from '../../../lib/feedback';
+import { buildInviteMessage } from '../../../lib/invite';
 import { PlayerList } from '../../../components/lobby/PlayerList';
 import { PredictionCard } from '../../../components/lobby/PredictionCard';
 import { SubjectPickerModal } from '../../../components/lobby/SubjectPickerModal';
@@ -219,7 +220,7 @@ export default function LobbyScreen() {
 
 	const handleShare = () => {
 		Share.share({
-			message: `${getGameDisplayName(game?.code ?? '------', game?.name)}\nCode: ${game?.code}\nbingoo://join/${game?.code}`,
+			message: buildInviteMessage(game?.code ?? '------', game?.name),
 		});
 	};
 
