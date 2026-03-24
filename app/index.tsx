@@ -20,11 +20,19 @@ import { getDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import Constants from 'expo-constants';
 import { colors, spacing, radius, fontSize } from '../constants/theme';
-import { createGame, getGameByCode, isGameBannedError, joinGame, leaveGame } from '../lib/firestore';
+import {
+	createGame,
+	getGameByCode,
+	isGameBannedError,
+	joinGame,
+	leaveGame,
+} from '../lib/firestore';
 import { useGameStore } from '../store/gameStore';
 
-const PRIVACY_POLICY_URL = 'https://tim-schaeren.github.io/bingoo/privacy-policy.html';
-const COMMUNITY_GUIDELINES_URL = 'https://tim-schaeren.github.io/bingoo/community-guidelines.html';
+const PRIVACY_POLICY_URL =
+	'https://tim-schaeren.github.io/bingoo/privacy-policy.html';
+const COMMUNITY_GUIDELINES_URL =
+	'https://tim-schaeren.github.io/bingoo/community-guidelines.html';
 const FEEDBACK_EMAIL = 'argyles.twigs9p@icloud.com';
 const APP_VERSION = Constants.expoConfig?.version ?? '1.0.0';
 
@@ -33,19 +41,19 @@ type Mode = 'home' | 'create' | 'join';
 const RULES = [
 	{
 		emoji: '✍️',
-		text: 'Everyone writes predictions about each other — things you think will become true.',
+		text: 'Players write predictions about each other.\nYou cannot see predictions about yourself.',
 	},
 	{
 		emoji: '🃏',
-		text: 'When the host starts the game, everyone gets a random bingoo card filled with predictions about the other players.',
+		text: 'When the game starts, everyone gets a random bingoo card filled with predictions.',
 	},
 	{
 		emoji: '✓',
-		text: 'Once a prediction comes true, mark it on the bingoo card. It will also be marked for everyone else.',
+		text: 'Once a prediction comes true, mark it on the bingoo card.\nIt will also be marked for everyone else.',
 	},
 	{
 		emoji: '🎉',
-		text: 'First player to complete a row, column, or diagonal wins!',
+		text: 'First player to complete a row, column,\nor diagonal wins!',
 	},
 ];
 
@@ -99,7 +107,10 @@ export default function HomeScreen() {
 				try {
 					await getDoc(doc(db, 'games', gameId, 'players', playerId));
 				} catch (error) {
-					const code = error instanceof Error && 'code' in error ? (error as Error & { code?: string }).code : undefined;
+					const code =
+						error instanceof Error && 'code' in error
+							? (error as Error & { code?: string }).code
+							: undefined;
 					if (code === 'permission-denied') {
 						clearRemovedSession();
 						return;
@@ -113,7 +124,10 @@ export default function HomeScreen() {
 			else if (status === 'finished') router.replace(`/game/${gameId}/winner`);
 			else reset();
 		} catch (error) {
-			const code = error instanceof Error && 'code' in error ? (error as Error & { code?: string }).code : undefined;
+			const code =
+				error instanceof Error && 'code' in error
+					? (error as Error & { code?: string }).code
+					: undefined;
 			if (code === 'permission-denied') {
 				clearRemovedSession();
 				return;
@@ -225,7 +239,10 @@ export default function HomeScreen() {
 				try {
 					await leaveGame(gameId, playerId);
 				} catch (error) {
-					const code = error instanceof Error && 'code' in error ? (error as Error & { code?: string }).code : undefined;
+					const code =
+						error instanceof Error && 'code' in error
+							? (error as Error & { code?: string }).code
+							: undefined;
 					if (code === 'permission-denied') {
 						reset();
 						return;
@@ -235,12 +252,18 @@ export default function HomeScreen() {
 			}
 			reset();
 		} catch (error) {
-			const code = error instanceof Error && 'code' in error ? (error as Error & { code?: string }).code : undefined;
+			const code =
+				error instanceof Error && 'code' in error
+					? (error as Error & { code?: string }).code
+					: undefined;
 			if (code === 'permission-denied') {
 				reset();
 				return;
 			}
-			Alert.alert('Error', 'Could not leave the saved game. Check your connection.');
+			Alert.alert(
+				'Error',
+				'Could not leave the saved game. Check your connection.',
+			);
 		} finally {
 			setLoading(false);
 		}
@@ -258,51 +281,53 @@ export default function HomeScreen() {
 					}
 					keyboardShouldPersistTaps="handled"
 				>
-					{/* Header */}
-					<View style={styles.header}>
-						<Animated.View
-							style={{
-								opacity: iconAnim,
-								height: iconAnim.interpolate({
-									inputRange: [0, 1],
-									outputRange: [0, 240],
-								}),
-								marginBottom: iconAnim.interpolate({
-									inputRange: [0, 1],
-									outputRange: [0, spacing.sm],
-								}),
-								overflow: 'hidden',
-							}}
-						>
-							<Image
-								source={require('../assets/icon_no_bg.png')}
-								style={styles.logoImage}
-							/>
-						</Animated.View>
-						<Text style={styles.logo}>bingoo</Text>
-						<Text style={styles.tagline}>your friends know you too well.</Text>
-					</View>
+					{mode === 'home' ? (
+						<View style={styles.homeMain}>
+							<View style={styles.header}>
+								<Animated.View
+									style={{
+										opacity: iconAnim,
+										height: iconAnim.interpolate({
+											inputRange: [0, 1],
+											outputRange: [0, 240],
+										}),
+										marginBottom: iconAnim.interpolate({
+											inputRange: [0, 1],
+											outputRange: [0, spacing.sm],
+										}),
+										overflow: 'hidden',
+									}}
+								>
+									<Image
+										source={require('../assets/icon_no_bg.png')}
+										style={styles.logoImage}
+									/>
+								</Animated.View>
+								<Text style={styles.logo}>bingoo</Text>
+								<Text style={styles.tagline}>
+									your friends know you too well.
+								</Text>
+							</View>
 
-					{mode === 'home' && (
-						<View style={styles.actions}>
+							<View style={styles.actions}>
 								{gameId ? (
-								<>
-									<TouchableOpacity
-										style={[
-											styles.primaryButton,
-											loading && styles.buttonDisabled,
-										]}
-										onPress={handleContinue}
-										disabled={loading}
-									>
-										{loading ? (
-											<ActivityIndicator color="#fff" />
-										) : (
-											<Text style={styles.primaryButtonText}>
-												continue game
-											</Text>
-										)}
-									</TouchableOpacity>
+									<>
+										<TouchableOpacity
+											style={[
+												styles.primaryButton,
+												loading && styles.buttonDisabled,
+											]}
+											onPress={handleContinue}
+											disabled={loading}
+										>
+											{loading ? (
+												<ActivityIndicator color="#fff" />
+											) : (
+												<Text style={styles.primaryButtonText}>
+													continue game
+												</Text>
+											)}
+										</TouchableOpacity>
 										<TouchableOpacity
 											onPress={() =>
 												Alert.alert(
@@ -318,27 +343,54 @@ export default function HomeScreen() {
 													],
 												)
 											}
-										style={styles.backButton}
-									>
-										<Text style={styles.backButtonText}>leave game</Text>
-									</TouchableOpacity>
-								</>
-							) : (
-								<>
-									<TouchableOpacity
-										style={styles.primaryButton}
-										onPress={() => setMode('create')}
-									>
-										<Text style={styles.primaryButtonText}>create</Text>
-									</TouchableOpacity>
-									<TouchableOpacity
-										style={styles.secondaryButton}
-										onPress={() => setMode('join')}
-									>
-										<Text style={styles.secondaryButtonText}>join</Text>
-									</TouchableOpacity>
-								</>
-							)}
+											style={styles.backButton}
+										>
+											<Text style={styles.backButtonText}>leave game</Text>
+										</TouchableOpacity>
+									</>
+								) : (
+									<>
+										<TouchableOpacity
+											style={styles.primaryButton}
+											onPress={() => setMode('create')}
+										>
+											<Text style={styles.primaryButtonText}>create</Text>
+										</TouchableOpacity>
+										<TouchableOpacity
+											style={styles.secondaryButton}
+											onPress={() => setMode('join')}
+										>
+											<Text style={styles.secondaryButtonText}>join</Text>
+										</TouchableOpacity>
+									</>
+								)}
+							</View>
+						</View>
+					) : (
+						<View style={styles.header}>
+							<Animated.View
+								style={{
+									opacity: iconAnim,
+									height: iconAnim.interpolate({
+										inputRange: [0, 1],
+										outputRange: [0, 240],
+									}),
+									marginBottom: iconAnim.interpolate({
+										inputRange: [0, 1],
+										outputRange: [0, spacing.sm],
+									}),
+									overflow: 'hidden',
+								}}
+							>
+								<Image
+									source={require('../assets/icon_no_bg.png')}
+									style={styles.logoImage}
+								/>
+							</Animated.View>
+							<Text style={styles.logo}>bingoo</Text>
+							<Text style={styles.tagline}>
+								your friends know you too well.
+							</Text>
 						</View>
 					)}
 
@@ -357,20 +409,29 @@ export default function HomeScreen() {
 
 							<View style={styles.policyRow}>
 								<TouchableOpacity
-									style={[styles.checkbox, acceptedPolicies && styles.checkboxChecked]}
+									style={[
+										styles.checkbox,
+										acceptedPolicies && styles.checkboxChecked,
+									]}
 									onPress={() => setAcceptedPolicies((value) => !value)}
 								>
-									{acceptedPolicies && <Text style={styles.checkboxMark}>✓</Text>}
+									{acceptedPolicies && (
+										<Text style={styles.checkboxMark}>✓</Text>
+									)}
 								</TouchableOpacity>
 								<View style={styles.policyTextWrap}>
 									<Text style={styles.policyText}>
 										I agree to the community rules and privacy policy.
 									</Text>
 									<View style={styles.policyLinks}>
-										<TouchableOpacity onPress={() => Linking.openURL(COMMUNITY_GUIDELINES_URL)}>
+										<TouchableOpacity
+											onPress={() => Linking.openURL(COMMUNITY_GUIDELINES_URL)}
+										>
 											<Text style={styles.policyLinkText}>Community rules</Text>
 										</TouchableOpacity>
-										<TouchableOpacity onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}>
+										<TouchableOpacity
+											onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
+										>
 											<Text style={styles.policyLinkText}>Privacy policy</Text>
 										</TouchableOpacity>
 									</View>
@@ -422,20 +483,29 @@ export default function HomeScreen() {
 
 							<View style={styles.policyRow}>
 								<TouchableOpacity
-									style={[styles.checkbox, acceptedPolicies && styles.checkboxChecked]}
+									style={[
+										styles.checkbox,
+										acceptedPolicies && styles.checkboxChecked,
+									]}
 									onPress={() => setAcceptedPolicies((value) => !value)}
 								>
-									{acceptedPolicies && <Text style={styles.checkboxMark}>✓</Text>}
+									{acceptedPolicies && (
+										<Text style={styles.checkboxMark}>✓</Text>
+									)}
 								</TouchableOpacity>
 								<View style={styles.policyTextWrap}>
 									<Text style={styles.policyText}>
 										I agree to the community rules and privacy policy.
 									</Text>
 									<View style={styles.policyLinks}>
-										<TouchableOpacity onPress={() => Linking.openURL(COMMUNITY_GUIDELINES_URL)}>
+										<TouchableOpacity
+											onPress={() => Linking.openURL(COMMUNITY_GUIDELINES_URL)}
+										>
 											<Text style={styles.policyLinkText}>Community rules</Text>
 										</TouchableOpacity>
-										<TouchableOpacity onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}>
+										<TouchableOpacity
+											onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
+										>
 											<Text style={styles.policyLinkText}>Privacy policy</Text>
 										</TouchableOpacity>
 									</View>
@@ -465,63 +535,69 @@ export default function HomeScreen() {
 					{mode === 'home' && (
 						<View style={styles.accordions}>
 							<View style={styles.rules}>
-							<TouchableOpacity
-								style={styles.rulesToggle}
-								onPress={() => setRulesOpen((o) => !o)}
-							>
-								<Text style={styles.rulesToggleText}>how to play</Text>
-								<Text style={styles.rulesChevron}>{rulesOpen ? '▲' : '▼'}</Text>
-							</TouchableOpacity>
-							{rulesOpen && (
-								<View style={styles.rulesList}>
-									{RULES.map((r, i) => (
-										<View key={i} style={styles.ruleRow}>
-											<Text style={styles.ruleEmoji}>{r.emoji}</Text>
-											<Text style={styles.ruleText}>{r.text}</Text>
-										</View>
-									))}
-								</View>
-							)}
+								<TouchableOpacity
+									style={styles.rulesToggle}
+									onPress={() => setRulesOpen((o) => !o)}
+								>
+									<Text style={styles.rulesToggleText}>how to play</Text>
+									<Text style={styles.rulesChevron}>
+										{rulesOpen ? '▲' : '▼'}
+									</Text>
+								</TouchableOpacity>
+								{rulesOpen && (
+									<View style={styles.rulesList}>
+										{RULES.map((r, i) => (
+											<View key={i} style={styles.ruleRow}>
+												<Text style={styles.ruleEmoji}>{r.emoji}</Text>
+												<Text style={styles.ruleText}>{r.text}</Text>
+											</View>
+										))}
+									</View>
+								)}
 							</View>
 							<View style={[styles.rules, { marginTop: spacing.sm }]}>
-							<TouchableOpacity
-								style={styles.rulesToggle}
-								onPress={() => setInfoOpen((o) => !o)}
-							>
-								<Text style={styles.rulesToggleText}>about</Text>
-								<Text style={styles.rulesChevron}>{infoOpen ? '▲' : '▼'}</Text>
-							</TouchableOpacity>
-							{infoOpen && (
-								<View style={styles.rulesList}>
-									<Text style={styles.ruleText}>
-										No account needed. bingoo uses anonymous sign-in — your real
-										identity is never collected or stored.
+								<TouchableOpacity
+									style={styles.rulesToggle}
+									onPress={() => setInfoOpen((o) => !o)}
+								>
+									<Text style={styles.rulesToggleText}>about</Text>
+									<Text style={styles.rulesChevron}>
+										{infoOpen ? '▲' : '▼'}
 									</Text>
-									<TouchableOpacity
-										style={styles.infoLink}
-										onPress={() => Linking.openURL(COMMUNITY_GUIDELINES_URL)}
-									>
-										<Text style={styles.infoLinkText}>Community Rules →</Text>
-									</TouchableOpacity>
-									<TouchableOpacity
-										style={styles.infoLink}
-										onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
-									>
-										<Text style={styles.infoLinkText}>Privacy Policy →</Text>
-									</TouchableOpacity>
-									<TouchableOpacity
-										style={styles.infoLink}
-										onPress={() =>
-											Linking.openURL(`mailto:${FEEDBACK_EMAIL}?subject=bingoo%20feedback`)
-										}
-									>
-										<Text style={styles.infoLinkText}>Send Feedback →</Text>
-									</TouchableOpacity>
-									<Text style={[styles.ruleText, { marginTop: spacing.xs }]}>
-										Version {APP_VERSION}
-									</Text>
-								</View>
-							)}
+								</TouchableOpacity>
+								{infoOpen && (
+									<View style={styles.rulesList}>
+										<Text style={styles.ruleText}>
+											No account needed. bingoo uses anonymous sign-in — your
+											real identity is never collected or stored.
+										</Text>
+										<TouchableOpacity
+											style={styles.infoLink}
+											onPress={() => Linking.openURL(COMMUNITY_GUIDELINES_URL)}
+										>
+											<Text style={styles.infoLinkText}>Community Rules →</Text>
+										</TouchableOpacity>
+										<TouchableOpacity
+											style={styles.infoLink}
+											onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
+										>
+											<Text style={styles.infoLinkText}>Privacy Policy →</Text>
+										</TouchableOpacity>
+										<TouchableOpacity
+											style={styles.infoLink}
+											onPress={() =>
+												Linking.openURL(
+													`mailto:${FEEDBACK_EMAIL}?subject=bingoo%20feedback`,
+												)
+											}
+										>
+											<Text style={styles.infoLinkText}>Send Feedback →</Text>
+										</TouchableOpacity>
+										<Text style={[styles.ruleText, { marginTop: spacing.xs }]}>
+											Version {APP_VERSION}
+										</Text>
+									</View>
+								)}
 							</View>
 						</View>
 					)}
@@ -564,16 +640,33 @@ const styles = StyleSheet.create({
 	},
 	checkboxMark: { color: '#fff', fontWeight: '800', fontSize: 12 },
 	policyTextWrap: { flex: 1, gap: spacing.xs },
-	policyText: { fontSize: fontSize.sm, color: colors.textLight, lineHeight: 18 },
+	policyText: {
+		fontSize: fontSize.sm,
+		color: colors.textLight,
+		lineHeight: 18,
+	},
 	policyLinks: { flexDirection: 'row', gap: spacing.md, flexWrap: 'wrap' },
-	policyLinkText: { fontSize: fontSize.sm, color: colors.primary, fontWeight: '600' },
-	container: { flexGrow: 1, padding: spacing.lg, paddingTop: 80, justifyContent: 'space-between' },
+	policyLinkText: {
+		fontSize: fontSize.sm,
+		color: colors.primary,
+		fontWeight: '600',
+	},
+	container: {
+		flexGrow: 1,
+		padding: spacing.lg,
+		paddingTop: spacing.xxl + spacing.lg,
+		paddingBottom: spacing.lg,
+	},
 	containerForm: { flexGrow: 1, padding: spacing.lg, paddingTop: spacing.lg },
-	accordions: { marginTop: spacing.xl },
+	homeMain: {
+		flexGrow: 1,
+		justifyContent: 'center',
+		paddingBottom: spacing.xl,
+	},
+	accordions: { marginTop: spacing.lg },
 	header: {
 		alignItems: 'center',
-		paddingTop: spacing.lg,
-		paddingBottom: spacing.sm,
+		paddingBottom: spacing.xl,
 	},
 	logoImage: {
 		width: 240,
@@ -590,7 +683,10 @@ const styles = StyleSheet.create({
 		color: colors.textLight,
 		marginTop: spacing.xs,
 	},
-	actions: { gap: spacing.md },
+	actions: {
+		gap: spacing.md,
+		alignItems: 'center',
+	},
 	form: { gap: spacing.md, marginTop: spacing.xl },
 	label: {
 		fontSize: fontSize.sm,
