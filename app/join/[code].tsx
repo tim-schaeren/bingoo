@@ -14,7 +14,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, radius, fontSize } from '../../constants/theme';
 import { getGameByCode, isGameBannedError, joinGame } from '../../lib/firestore';
-import { useGameStore } from '../../store/gameStore';
+import { MAX_MEMBERSHIPS, useGameStore } from '../../store/gameStore';
 
 const PRIVACY_POLICY_URL = 'https://tim-schaeren.github.io/bingoo/privacy-policy.html';
 const COMMUNITY_GUIDELINES_URL = 'https://tim-schaeren.github.io/bingoo/community-guidelines.html';
@@ -25,7 +25,10 @@ export default function JoinByLinkScreen() {
   const [nickname, setNickname] = useState('');
   const [loading, setLoading] = useState(false);
   const [acceptedPolicies, setAcceptedPolicies] = useState(false);
-  const setSession = useGameStore(s => s.setSession);
+  const memberships = useGameStore((s) => s.memberships);
+  const pushToken = useGameStore((s) => s.pushToken);
+  const upsertMembership = useGameStore((s) => s.upsertMembership);
+  const setCurrentGame = useGameStore((s) => s.setCurrentGame);
 
   const handleJoin = async () => {
     if (!nickname.trim()) {
@@ -50,8 +53,24 @@ export default function JoinByLinkScreen() {
         Alert.alert('Too late', 'This game has already started.');
         return;
       }
-      const { playerId } = await joinGame(game.id, nickname.trim());
-      setSession(playerId, nickname.trim(), game.id, false);
+
+      const existingMembership = memberships.find((membership) => membership.gameId === game.id);
+      if (existingMembership) {
+        setCurrentGame(game.id);
+        router.replace(`/game/${game.id}/lobby`);
+        return;
+      }
+
+      if (memberships.length >= MAX_MEMBERSHIPS) {
+        Alert.alert(
+          'Game limit reached',
+          `You can only be part of ${MAX_MEMBERSHIPS} games at the same time. Leave one first.`,
+        );
+        return;
+      }
+
+      const { playerId } = await joinGame(game.id, nickname.trim(), pushToken);
+      upsertMembership({ gameId: game.id, playerId, nickname: nickname.trim(), isHost: false });
       router.replace(`/game/${game.id}/lobby`);
     } catch (error) {
       if (isGameBannedError(error)) {

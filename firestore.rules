@@ -31,9 +31,12 @@ service cloud.firestore {
         request.auth != null
         && request.auth.uid == request.resource.data.hostId
         && request.resource.data.keys().hasAll([
-            'code', 'status', 'hostId', 'hostNickname',
+            'code', 'name', 'status', 'hostId', 'hostNickname',
             'gridSize', 'winners', 'createdAt'
           ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 32
         && request.resource.data.status == 'lobby'
         && request.resource.data.gridSize == 0
         && request.resource.data.winners == [];

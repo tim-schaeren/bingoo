@@ -48,24 +48,47 @@ import { ActionModal } from '../../../components/ActionModal';
 const PREDICTIONS_PER_PLAYER = 2;
 const MIN_PLAYERS = 3;
 
+function getGameDisplayName(code: string, name?: string): string {
+	return name?.trim() || `Game ${code}`;
+}
+
 export default function LobbyScreen() {
-	const { id: gameId } = useLocalSearchParams<{ id: string }>();
-	const { playerId, isHost, setGame, setPlayers, setPredictions } = useGameStore();
+	const { id: gameId, welcome } = useLocalSearchParams<{
+		id: string;
+		welcome?: string;
+	}>();
+	const membership = useGameStore((s) =>
+		gameId ? s.memberships.find((saved) => saved.gameId === gameId) : undefined,
+	);
+	const playerId = membership?.playerId ?? null;
+	const isHost = membership?.isHost ?? false;
+	const setGame = useGameStore((s) => s.setGame);
+	const setPlayers = useGameStore((s) => s.setPlayers);
+	const setPredictions = useGameStore((s) => s.setPredictions);
+	const removeMembership = useGameStore((s) => s.removeMembership);
+	const setCurrentGame = useGameStore((s) => s.setCurrentGame);
 
 	const game = useGameStore((s) => s.game);
 	const players = useGameStore((s) => s.players);
 	const predictions = useGameStore((s) => s.predictions);
 
-	const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
+	const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(
+		null,
+	);
 	const [predText, setPredText] = useState('');
 	const [adding, setAdding] = useState(false);
 	const [starting, setStarting] = useState(false);
-	const [showWelcome, setShowWelcome] = useState(isHost);
+	const [showWelcome, setShowWelcome] = useState(isHost && welcome === '1');
 	const [showSubjectPicker, setShowSubjectPicker] = useState(false);
-	const [reactionPickerFor, setReactionPickerFor] = useState<string | null>(null);
-	const [reportingPrediction, setReportingPrediction] = useState<Prediction | null>(null);
+	const [reactionPickerFor, setReactionPickerFor] = useState<string | null>(
+		null,
+	);
+	const [reportingPrediction, setReportingPrediction] =
+		useState<Prediction | null>(null);
 	const [reportingPlayer, setReportingPlayer] = useState<Player | null>(null);
-	const [actionPrediction, setActionPrediction] = useState<Prediction | null>(null);
+	const [actionPrediction, setActionPrediction] = useState<Prediction | null>(
+		null,
+	);
 	const [actionPlayer, setActionPlayer] = useState<Player | null>(null);
 
 	const inputRef = useRef<TextInput>(null);
@@ -74,9 +97,9 @@ export default function LobbyScreen() {
 	const wasRemovedRef = useRef(false);
 
 	const handleRemovedFromGame = () => {
-		if (wasRemovedRef.current) return;
+		if (wasRemovedRef.current || !gameId) return;
 		wasRemovedRef.current = true;
-		useGameStore.getState().reset();
+		removeMembership(gameId);
 		Alert.alert('Removed from game', 'The host of the game removed you.', [
 			{ text: 'OK', onPress: () => router.replace('/') },
 		]);
@@ -84,33 +107,53 @@ export default function LobbyScreen() {
 
 	useEffect(() => {
 		if (!gameId) return;
+		setCurrentGame(gameId);
 		const onListenerError = (error: Error & { code?: string }) => {
 			if (error.code === 'permission-denied') {
 				handleRemovedFromGame();
 				return;
 			}
-			Alert.alert('Connection error', 'Lost connection to game. Check your internet.');
+			Alert.alert(
+				'Connection error',
+				'Lost connection to game. Check your internet.',
+			);
 		};
 		const unsubs = [
-			listenToGame(gameId, (g) => {
-				setGame(g);
-				if (g.status === 'active') router.replace(`/game/${gameId}/play`);
-				if (g.status === 'cancelled') {
-					useGameStore.getState().reset();
-					if (isHost) {
-						router.replace('/');
-					} else {
-						Alert.alert('Game cancelled', 'The host cancelled the game.', [
-							{ text: 'OK', onPress: () => router.replace('/') },
-						]);
+			listenToGame(
+				gameId,
+				(g) => {
+					setGame(g);
+					if (g.status === 'active') router.replace(`/game/${gameId}/play`);
+					if (g.status === 'cancelled') {
+						removeMembership(gameId);
+						if (isHost) {
+							router.replace('/');
+						} else {
+							Alert.alert('Game cancelled', 'The host cancelled the game.', [
+								{ text: 'OK', onPress: () => router.replace('/') },
+							]);
+						}
 					}
-				}
-			}, onListenerError),
+				},
+				onListenerError,
+			),
 			listenToPlayers(gameId, setPlayers, onListenerError),
 			listenToPredictions(gameId, setPredictions, onListenerError),
 		];
 		return () => unsubs.forEach((u) => u());
-	}, [gameId]);
+	}, [
+		gameId,
+		isHost,
+		removeMembership,
+		setCurrentGame,
+		setGame,
+		setPlayers,
+		setPredictions,
+	]);
+
+	useEffect(() => {
+		if (gameId && !membership) router.replace('/');
+	}, [gameId, membership]);
 
 	useEffect(() => {
 		if (!playerId || players.length === 0 || wasRemovedRef.current) return;
@@ -122,22 +165,29 @@ export default function LobbyScreen() {
 	const me = players.find((p) => p.id === playerId);
 	const submitted = me?.predictionsSubmitted ?? false;
 	const allSubmitted =
-		players.length >= MIN_PLAYERS && players.every((p) => p.predictionsSubmitted);
+		players.length >= MIN_PLAYERS &&
+		players.every((p) => p.predictionsSubmitted);
 
 	const globalCountBySubject = new Map<string, number>();
 	predictions.forEach((p) => {
-		globalCountBySubject.set(p.subjectId, (globalCountBySubject.get(p.subjectId) ?? 0) + 1);
+		globalCountBySubject.set(
+			p.subjectId,
+			(globalCountBySubject.get(p.subjectId) ?? 0) + 1,
+		);
 	});
 
 	const allSubjectsFull =
 		otherPlayers.length >= MIN_PLAYERS - 1 &&
-		otherPlayers.every((p) => (globalCountBySubject.get(p.id) ?? 0) >= PREDICTIONS_PER_PLAYER);
+		otherPlayers.every(
+			(p) => (globalCountBySubject.get(p.id) ?? 0) >= PREDICTIONS_PER_PLAYER,
+		);
 
 	// Auto-select first subject with room when players load or predictions change
 	useEffect(() => {
 		if (
 			!selectedSubjectId ||
-			(globalCountBySubject.get(selectedSubjectId) ?? 0) >= PREDICTIONS_PER_PLAYER
+			(globalCountBySubject.get(selectedSubjectId) ?? 0) >=
+				PREDICTIONS_PER_PLAYER
 		) {
 			const first = otherPlayers.find(
 				(p) => (globalCountBySubject.get(p.id) ?? 0) < PREDICTIONS_PER_PLAYER,
@@ -163,11 +213,13 @@ export default function LobbyScreen() {
 	const getPlayerName = (pid: string | undefined) =>
 		players.find((p) => p.id === pid)?.nickname ?? '…';
 
-	const visiblePredictions = predictions.filter((p) => p.subjectId !== playerId);
+	const visiblePredictions = predictions.filter(
+		(p) => p.subjectId !== playerId,
+	);
 
 	const handleShare = () => {
 		Share.share({
-			message: `Join my bingoo!\nCode: ${game?.code}\nbingoo://join/${game?.code}`,
+			message: `${getGameDisplayName(game?.code ?? '------', game?.name)}\nCode: ${game?.code}\nbingoo://join/${game?.code}`,
 		});
 	};
 
@@ -219,12 +271,18 @@ export default function LobbyScreen() {
 		}
 	};
 
-	const handleReaction = async (prediction: Prediction, emoji: ReactionEmoji) => {
+	const handleReaction = async (
+		prediction: Prediction,
+		emoji: ReactionEmoji,
+	) => {
 		if (!playerId || !gameId) return;
 		const current =
-			(Object.entries(prediction.reactions ?? {}) as [ReactionEmoji, string[]][]).find(
-				([, uids]) => uids.includes(playerId),
-			)?.[0] ?? null;
+			(
+				Object.entries(prediction.reactions ?? {}) as [
+					ReactionEmoji,
+					string[],
+				][]
+			).find(([, uids]) => uids.includes(playerId))?.[0] ?? null;
 		const next = current === emoji ? null : emoji;
 		setReactionPickerFor(null);
 		await setReaction(gameId, prediction.id, playerId, next, current);
@@ -257,7 +315,12 @@ export default function LobbyScreen() {
 		if (!gameId || !playerId) return;
 		try {
 			if (reportingPrediction) {
-				await reportPrediction(gameId, reportingPrediction.id, playerId, reason);
+				await reportPrediction(
+					gameId,
+					reportingPrediction.id,
+					playerId,
+					reason,
+				);
 			} else if (reportingPlayer) {
 				await reportPlayer(gameId, reportingPlayer.id, playerId, reason);
 			} else {
@@ -287,7 +350,9 @@ export default function LobbyScreen() {
 							await banPlayerFromGame(gameId, player.id, true);
 						} catch (error) {
 							const message =
-								error instanceof Error ? error.message : 'Could not remove this player. Try again.';
+								error instanceof Error
+									? error.message
+									: 'Could not remove this player. Try again.';
 							Alert.alert('Error', message);
 						}
 					},
@@ -326,8 +391,14 @@ export default function LobbyScreen() {
 		setStarting(true);
 		try {
 			await startGame(gameId, players, predictions);
-			const tokens = players.filter((p) => p.id !== playerId).map((p) => p.pushToken);
-			sendPushNotifications(tokens, 'game started! 🎰', 'Check your bingoo card.');
+			const tokens = players
+				.filter((p) => p.id !== playerId)
+				.map((p) => p.pushToken);
+			sendPushNotifications(
+				tokens,
+				'game started! 🎰',
+				'Check your bingoo card.',
+			);
 		} catch {
 			Alert.alert('Error', 'Could not start game. Try again.');
 			setStarting(false);
@@ -335,21 +406,25 @@ export default function LobbyScreen() {
 	};
 
 	const handleCancel = () => {
-		Alert.alert('Cancel game', 'This will end the lobby for everyone. Are you sure?', [
-			{ text: 'Keep playing', style: 'cancel' },
-			{
-				text: 'Cancel game',
-				style: 'destructive',
-				onPress: async () => {
-					try {
-						await cancelGame(gameId!);
-						router.replace('/');
-					} catch {
-						Alert.alert('Error', 'Could not cancel the game. Try again.');
-					}
+		Alert.alert(
+			'Cancel game',
+			'This will end the lobby for everyone. Are you sure?',
+			[
+				{ text: 'Keep playing', style: 'cancel' },
+				{
+					text: 'Cancel game',
+					style: 'destructive',
+					onPress: async () => {
+						try {
+							await cancelGame(gameId!);
+							router.replace('/');
+						} catch {
+							Alert.alert('Error', 'Could not cancel the game. Try again.');
+						}
+					},
 				},
-			},
-		]);
+			],
+		);
 	};
 
 	const handleLeave = () => {
@@ -361,7 +436,7 @@ export default function LobbyScreen() {
 				onPress: async () => {
 					try {
 						await leaveGame(gameId!, playerId!);
-						useGameStore.getState().reset();
+						removeMembership(gameId!);
 						router.replace('/');
 					} catch {
 						Alert.alert('Error', 'Could not leave the game. Try again.');
@@ -380,7 +455,8 @@ export default function LobbyScreen() {
 	}
 
 	const selectedSubject = otherPlayers.find((p) => p.id === selectedSubjectId);
-	const selectedSubjectCount = globalCountBySubject.get(selectedSubjectId ?? '') ?? 0;
+	const selectedSubjectCount =
+		globalCountBySubject.get(selectedSubjectId ?? '') ?? 0;
 	const canAdd =
 		!!selectedSubjectId &&
 		predText.trim().length > 0 &&
@@ -399,10 +475,18 @@ export default function LobbyScreen() {
 				>
 					{/* Header */}
 					<View style={styles.header}>
-						<TouchableOpacity onPress={() => router.replace('/')} style={styles.homeButton}>
-							<Text style={styles.homeButtonText}>⌂</Text>
+						<TouchableOpacity
+							onPress={() => router.replace('/')}
+							style={styles.homeButton}
+						>
+							<Text style={styles.homeButtonText}>home</Text>
 						</TouchableOpacity>
-						<Text style={styles.gameCode}>{game.code}</Text>
+						<View style={styles.headerTitleWrap}>
+							<Text style={styles.gameName}>
+								{getGameDisplayName(game.code, game.name)}
+							</Text>
+							<Text style={styles.gameCode}>{game.code}</Text>
+						</View>
 						<TouchableOpacity style={styles.shareButton} onPress={handleShare}>
 							<Text style={styles.shareButtonText}>invite</Text>
 						</TouchableOpacity>
@@ -428,7 +512,9 @@ export default function LobbyScreen() {
 									onReact={handleReaction}
 									reactionPickerOpen={reactionPickerFor === p.id}
 									onTogglePicker={() =>
-										setReactionPickerFor(reactionPickerFor === p.id ? null : p.id)
+										setReactionPickerFor(
+											reactionPickerFor === p.id ? null : p.id,
+										)
 									}
 									onOpenActions={handlePredictionAction}
 								/>
@@ -451,14 +537,28 @@ export default function LobbyScreen() {
 									const count = globalCountBySubject.get(p.id) ?? 0;
 									const full = count >= PREDICTIONS_PER_PLAYER;
 									return (
-										<View key={p.id} style={[styles.progressItem, full && styles.progressItemDone]}>
+										<View
+											key={p.id}
+											style={[
+												styles.progressItem,
+												full && styles.progressItemDone,
+											]}
+										>
 											<Text
-												style={[styles.progressName, full && styles.progressNameDone]}
+												style={[
+													styles.progressName,
+													full && styles.progressNameDone,
+												]}
 												numberOfLines={1}
 											>
 												{p.nickname}
 											</Text>
-											<Text style={[styles.progressCount, full && styles.progressCountDone]}>
+											<Text
+												style={[
+													styles.progressCount,
+													full && styles.progressCountDone,
+												]}
+											>
 												{`${count}/${PREDICTIONS_PER_PLAYER}`}
 											</Text>
 										</View>
@@ -488,12 +588,16 @@ export default function LobbyScreen() {
 										onSubmitEditing={handleAddPrediction}
 										maxLength={120}
 										editable={
-											!!selectedSubjectId && selectedSubjectCount < PREDICTIONS_PER_PLAYER
+											!!selectedSubjectId &&
+											selectedSubjectCount < PREDICTIONS_PER_PLAYER
 										}
 									/>
 								</View>
 								<TouchableOpacity
-									style={[styles.addButton, !canAdd && styles.addButtonDisabled]}
+									style={[
+										styles.addButton,
+										!canAdd && styles.addButtonDisabled,
+									]}
 									onPress={handleAddPrediction}
 									disabled={!canAdd}
 								>
@@ -501,7 +605,10 @@ export default function LobbyScreen() {
 								</TouchableOpacity>
 							</View>
 							{allSubjectsFull && (
-								<TouchableOpacity onPress={handleMarkDone} style={styles.doneEditingButton}>
+								<TouchableOpacity
+									onPress={handleMarkDone}
+									style={styles.doneEditingButton}
+								>
 									<Text style={styles.doneEditingText}>done</Text>
 								</TouchableOpacity>
 							)}
@@ -518,7 +625,10 @@ export default function LobbyScreen() {
 							</Text>
 							{isHost && (
 								<TouchableOpacity
-									style={[styles.startButton, starting && styles.buttonDisabled]}
+									style={[
+										styles.startButton,
+										starting && styles.buttonDisabled,
+									]}
 									onPress={handleStartGame}
 									disabled={starting}
 								>
@@ -527,7 +637,10 @@ export default function LobbyScreen() {
 									</Text>
 								</TouchableOpacity>
 							)}
-							<TouchableOpacity onPress={handleKeepWriting} style={styles.keepWritingButton}>
+							<TouchableOpacity
+								onPress={handleKeepWriting}
+								style={styles.keepWritingButton}
+							>
 								<Text style={styles.keepWritingText}>Edit my predictions</Text>
 							</TouchableOpacity>
 						</View>
@@ -556,7 +669,11 @@ export default function LobbyScreen() {
 
 			<ReportModal
 				visible={!!reportingPrediction || !!reportingPlayer}
-				title={reportingPrediction ? 'Report prediction' : `Report ${reportingPlayer?.nickname ?? 'player'}`}
+				title={
+					reportingPrediction
+						? 'Report prediction'
+						: `Report ${reportingPlayer?.nickname ?? 'player'}`
+				}
 				onClose={() => {
 					setReportingPrediction(null);
 					setReportingPlayer(null);
@@ -578,13 +695,13 @@ export default function LobbyScreen() {
 										tone: 'destructive' as const,
 										onPress: () => handleDeletePrediction(actionPrediction.id),
 									},
-							  ]
+								]
 							: [
 									{
 										label: 'Report prediction',
 										onPress: () => handleReportPrediction(actionPrediction),
 									},
-							  ]
+								]
 						: []
 				}
 			/>
@@ -608,9 +725,9 @@ export default function LobbyScreen() {
 												tone: 'destructive' as const,
 												onPress: () => handleRemovePlayer(actionPlayer),
 											},
-									  ]
+										]
 									: []),
-						  ]
+							]
 						: []
 				}
 			/>
@@ -636,11 +753,23 @@ const styles = StyleSheet.create({
 		alignItems: 'center',
 		justifyContent: 'space-between',
 	},
+	headerTitleWrap: {
+		flex: 1,
+		alignItems: 'center',
+		paddingHorizontal: spacing.sm,
+	},
+	gameName: {
+		fontSize: fontSize.lg,
+		fontWeight: '800',
+		color: colors.text,
+		textAlign: 'center',
+	},
 	gameCode: {
-		fontSize: fontSize.xl,
-		fontWeight: '900',
+		fontSize: fontSize.sm,
+		fontWeight: '700',
 		color: colors.primary,
-		letterSpacing: 3,
+		letterSpacing: 1.5,
+		marginTop: 2,
 	},
 	shareButton: {
 		backgroundColor: colors.primaryLight,
@@ -648,9 +777,24 @@ const styles = StyleSheet.create({
 		paddingHorizontal: spacing.md,
 		paddingVertical: spacing.sm,
 	},
-	shareButtonText: { color: colors.primary, fontWeight: '700', fontSize: fontSize.sm },
-	homeButton: { width: 36, alignItems: 'flex-start', justifyContent: 'center' },
-	homeButtonText: { fontSize: 20, color: colors.textLight },
+	shareButtonText: {
+		color: colors.primary,
+		fontWeight: '700',
+		fontSize: fontSize.sm,
+	},
+	homeButton: {
+		backgroundColor: colors.surface,
+		borderRadius: radius.full,
+		paddingHorizontal: spacing.md,
+		paddingVertical: spacing.sm,
+		borderWidth: 1,
+		borderColor: colors.border,
+	},
+	homeButtonText: {
+		fontSize: fontSize.sm,
+		color: colors.text,
+		fontWeight: '700',
+	},
 
 	poolGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
 
@@ -668,8 +812,16 @@ const styles = StyleSheet.create({
 		borderWidth: 1.5,
 		borderColor: colors.border,
 	},
-	progressItemDone: { backgroundColor: colors.primaryLight, borderColor: colors.primaryLight },
-	progressName: { fontSize: fontSize.sm, fontWeight: '600', color: colors.textLight, maxWidth: 80 },
+	progressItemDone: {
+		backgroundColor: colors.primaryLight,
+		borderColor: colors.primaryLight,
+	},
+	progressName: {
+		fontSize: fontSize.sm,
+		fontWeight: '600',
+		color: colors.textLight,
+		maxWidth: 80,
+	},
 	progressNameDone: { color: colors.primary },
 	progressCount: { fontSize: fontSize.sm, color: colors.textLight },
 	progressCountDone: { color: colors.primary, fontWeight: '700' },
@@ -724,8 +876,16 @@ const styles = StyleSheet.create({
 		borderWidth: 1,
 		borderColor: colors.border,
 	},
-	waitingTitle: { fontSize: fontSize.lg, fontWeight: '700', color: colors.success },
-	waitingText: { fontSize: fontSize.md, color: colors.textLight, textAlign: 'center' },
+	waitingTitle: {
+		fontSize: fontSize.lg,
+		fontWeight: '700',
+		color: colors.success,
+	},
+	waitingText: {
+		fontSize: fontSize.md,
+		color: colors.textLight,
+		textAlign: 'center',
+	},
 	startButton: {
 		backgroundColor: colors.secondary,
 		borderRadius: radius.lg,
@@ -734,7 +894,11 @@ const styles = StyleSheet.create({
 		alignItems: 'center',
 		marginTop: spacing.sm,
 	},
-	startButtonText: { color: colors.text, fontSize: fontSize.md, fontWeight: '800' },
+	startButtonText: {
+		color: colors.text,
+		fontSize: fontSize.md,
+		fontWeight: '800',
+	},
 	buttonDisabled: { opacity: 0.6 },
 	keepWritingButton: { paddingVertical: spacing.sm },
 	keepWritingText: { color: colors.textLight, fontSize: fontSize.sm },
@@ -757,10 +921,23 @@ const styles = StyleSheet.create({
 	},
 
 	quitButton: {
+		alignSelf: 'center',
+		minWidth: 140,
+		paddingHorizontal: spacing.lg,
+		marginBottom: spacing.lg,
+		paddingVertical: spacing.sm + 2,
+		borderRadius: radius.lg,
+		backgroundColor: '#FDECEC',
 		alignItems: 'center',
-		paddingVertical: spacing.md,
+		justifyContent: 'center',
 		borderTopWidth: 1,
-		borderTopColor: colors.border,
+		borderTopColor: 'transparent',
 	},
-	quitButtonText: { color: colors.error, fontSize: fontSize.sm, fontWeight: '600' },
+	quitButtonText: {
+		color: colors.error,
+		fontSize: fontSize.sm,
+		fontWeight: '700',
+		textTransform: 'uppercase',
+		letterSpacing: 0.5,
+	},
 });

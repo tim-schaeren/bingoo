@@ -14,7 +14,7 @@ export class ErrorBoundary extends React.Component<React.PropsWithChildren, Stat
   }
 
   handleReturnHome = () => {
-    useGameStore.getState().reset();
+    useGameStore.getState().clearLiveGame();
     this.setState({ hasError: false });
     router.replace('/');
   };

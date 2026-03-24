@@ -26,12 +26,19 @@ interface WinnerCard {
 
 export default function WinnerScreen() {
   const { id: gameId } = useLocalSearchParams<{ id: string }>();
-  const { setGame, setMarks, setPredictions } = useGameStore();
+  const membership = useGameStore((s) =>
+    gameId ? s.memberships.find((saved) => saved.gameId === gameId) : undefined,
+  );
+  const playerId = membership?.playerId ?? null;
+  const setGame = useGameStore((s) => s.setGame);
+  const setMarks = useGameStore((s) => s.setMarks);
+  const setPredictions = useGameStore((s) => s.setPredictions);
+  const removeMembership = useGameStore((s) => s.removeMembership);
+  const setCurrentGame = useGameStore((s) => s.setCurrentGame);
 
   const game = useGameStore(s => s.game);
   const marks = useGameStore(s => s.marks);
   const predictions = useGameStore(s => s.predictions);
-  const playerId = useGameStore(s => s.playerId);
 
   const [winnerCards, setWinnerCards] = useState<WinnerCard[]>([]);
   const [loadingCards, setLoadingCards] = useState(true);
@@ -40,13 +47,14 @@ export default function WinnerScreen() {
 
   useEffect(() => {
     if (!gameId) return;
+    setCurrentGame(gameId);
     const unsubs = [
       listenToGame(gameId, setGame),
       listenToMarks(gameId, setMarks),
       listenToPredictions(gameId, setPredictions),
     ];
     return () => unsubs.forEach(u => u());
-  }, [gameId]);
+  }, [gameId, setCurrentGame, setGame, setMarks, setPredictions]);
 
   const winners = game?.winners ?? [];
   const isMe = winners.some(w => w.id === playerId);
@@ -76,9 +84,8 @@ export default function WinnerScreen() {
   const getPredictionText = (predictionId: string) =>
     predictions.find(p => p.id === predictionId)?.text ?? '…';
 
-  const reset = useGameStore(s => s.reset);
   const handlePlayAgain = () => {
-    reset();
+    if (gameId) removeMembership(gameId);
     router.replace('/');
   };
 

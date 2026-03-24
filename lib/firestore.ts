@@ -29,6 +29,7 @@ export interface Winner {
 export interface Game {
   id: string;
   code: string;
+  name?: string;
   status: GameStatus;
   hostId: string;
   hostNickname: string;
@@ -88,6 +89,7 @@ export function isGameBannedError(error: unknown): error is GameBannedError {
 // ─── Create ───────────────────────────────────────────────────────────────────
 
 export async function createGame(
+  gameName: string,
   hostNickname: string,
   pushToken?: string | null,
 ): Promise<{ gameId: string; playerId: string }> {
@@ -97,6 +99,7 @@ export async function createGame(
 
   await setDoc(doc(db, 'games', gameId), {
     code,
+    name: gameName.trim(),
     status: 'lobby',
     hostId: playerId,
     hostNickname,

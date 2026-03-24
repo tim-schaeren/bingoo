@@ -39,15 +39,18 @@ const GRID_PADDING = spacing.lg * 2;
 
 export default function PlayScreen() {
 	const { id: gameId } = useLocalSearchParams<{ id: string }>();
-	const {
-		playerId,
-		nickname,
-		setGame,
-		setMarks,
-		setPredictions,
-		setMyCard,
-		setPlayers,
-	} = useGameStore();
+	const membership = useGameStore((s) =>
+		gameId ? s.memberships.find((saved) => saved.gameId === gameId) : undefined,
+	);
+	const playerId = membership?.playerId ?? null;
+	const nickname = membership?.nickname ?? null;
+	const setGame = useGameStore((s) => s.setGame);
+	const setMarks = useGameStore((s) => s.setMarks);
+	const setPredictions = useGameStore((s) => s.setPredictions);
+	const setMyCard = useGameStore((s) => s.setMyCard);
+	const setPlayers = useGameStore((s) => s.setPlayers);
+	const removeMembership = useGameStore((s) => s.removeMembership);
+	const setCurrentGame = useGameStore((s) => s.setCurrentGame);
 
 	const game = useGameStore((s) => s.game);
 	const marks = useGameStore((s) => s.marks);
@@ -67,9 +70,9 @@ export default function PlayScreen() {
 	const wasRemovedRef = useRef(false);
 
 	const handleRemovedFromGame = () => {
-		if (wasRemovedRef.current) return;
+		if (wasRemovedRef.current || !gameId) return;
 		wasRemovedRef.current = true;
-		useGameStore.getState().reset();
+		removeMembership(gameId);
 		Alert.alert('Removed from game', 'The host of the game removed you.', [
 			{ text: 'OK', onPress: () => router.replace('/') },
 		]);
@@ -80,6 +83,7 @@ export default function PlayScreen() {
 
 	useEffect(() => {
 		if (!gameId) return;
+		setCurrentGame(gameId);
 		const onListenerError = (error: Error & { code?: string }) => {
 			if (error.code === 'permission-denied') {
 				handleRemovedFromGame();
@@ -97,7 +101,11 @@ export default function PlayScreen() {
 			listenToPlayers(gameId, setPlayers, onListenerError),
 		];
 		return () => unsubs.forEach((u) => u());
-	}, [gameId]);
+	}, [gameId, setCurrentGame, setGame, setMarks, setPredictions, setPlayers]);
+
+	useEffect(() => {
+		if (gameId && !membership) router.replace('/');
+	}, [gameId, membership]);
 
 	useEffect(() => {
 		if (!playerId || players.length === 0 || wasRemovedRef.current) return;
@@ -275,7 +283,7 @@ export default function PlayScreen() {
 						</Text>
 					</View>
 					<TouchableOpacity onPress={() => router.replace('/')} style={styles.homeButton}>
-						<Text style={styles.homeButtonText}>⌂</Text>
+						<Text style={styles.homeButtonText}>home</Text>
 					</TouchableOpacity>
 				</View>
 
@@ -498,10 +506,14 @@ const styles = StyleSheet.create({
 	container: { padding: spacing.lg, gap: spacing.lg, alignItems: 'center' },
 
 	header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' },
-	headerSpacer: { width: 36 },
+	headerSpacer: { minWidth: 76 },
 	manageButton: {
-		minWidth: 56,
-		paddingVertical: spacing.xs,
+		minWidth: 76,
+		backgroundColor: colors.primaryLight,
+		borderRadius: radius.full,
+		paddingHorizontal: spacing.md,
+		paddingVertical: spacing.sm,
+		alignItems: 'center',
 	},
 	manageButtonText: {
 		fontSize: fontSize.sm,
@@ -510,8 +522,22 @@ const styles = StyleSheet.create({
 		textTransform: 'uppercase',
 	},
 	headerCenter: { alignItems: 'center', gap: spacing.xs },
-	homeButton: { width: 36, alignItems: 'flex-end', justifyContent: 'center' },
-	homeButtonText: { fontSize: 20, color: colors.textLight },
+	homeButton: {
+		minWidth: 76,
+		backgroundColor: colors.surface,
+		borderRadius: radius.full,
+		paddingHorizontal: spacing.md,
+		paddingVertical: spacing.sm,
+		borderWidth: 1,
+		borderColor: colors.border,
+		alignItems: 'center',
+	},
+	homeButtonText: {
+		fontSize: fontSize.sm,
+		color: colors.text,
+		fontWeight: '700',
+		textTransform: 'uppercase',
+	},
 	title: { fontSize: fontSize.xl, fontWeight: '900', color: colors.primary },
 	subtitle: { fontSize: fontSize.sm, color: colors.textLight },
 

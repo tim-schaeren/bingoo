@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
 	View,
 	Text,
@@ -22,12 +22,18 @@ import Constants from 'expo-constants';
 import { colors, spacing, radius, fontSize } from '../constants/theme';
 import {
 	createGame,
+	cancelGame,
 	getGameByCode,
 	isGameBannedError,
 	joinGame,
 	leaveGame,
+	type Game,
 } from '../lib/firestore';
-import { useGameStore } from '../store/gameStore';
+import {
+	MAX_MEMBERSHIPS,
+	type SavedMembership,
+	useGameStore,
+} from '../store/gameStore';
 
 const PRIVACY_POLICY_URL =
 	'https://tim-schaeren.github.io/bingoo/privacy-policy.html';
@@ -37,6 +43,11 @@ const FEEDBACK_EMAIL = 'argyles.twigs9p@icloud.com';
 const APP_VERSION = Constants.expoConfig?.version ?? '1.0.0';
 
 type Mode = 'home' | 'create' | 'join';
+
+interface SavedSessionSummary {
+	membership: SavedMembership;
+	game: Game;
+}
 
 const RULES = [
 	{
@@ -57,23 +68,38 @@ const RULES = [
 	},
 ];
 
+function routeForGame(gameId: string, status: string): string | null {
+	if (status === 'lobby') return `/game/${gameId}/lobby`;
+	if (status === 'active') return `/game/${gameId}/play`;
+	return null;
+}
+
+function getGameDisplayName(game: Game): string {
+	return game.name?.trim() || `Game ${game.code}`;
+}
+
 export default function HomeScreen() {
 	const [mode, setMode] = useState<Mode>('home');
+	const [gameName, setGameName] = useState('');
 	const [nickname, setNickname] = useState('');
 	const [joinCode, setJoinCode] = useState('');
 	const [loading, setLoading] = useState(false);
 	const [rulesOpen, setRulesOpen] = useState(false);
 	const [infoOpen, setInfoOpen] = useState(false);
 	const [acceptedPolicies, setAcceptedPolicies] = useState(false);
+	const [sessionSummaries, setSessionSummaries] = useState<
+		SavedSessionSummary[]
+	>([]);
+	const [loadingSessions, setLoadingSessions] = useState(true);
 
-	const { setSession, pushToken, gameId, playerId, reset } = useGameStore();
-
-	const clearRemovedSession = () => {
-		reset();
-		Alert.alert('Removed from game', 'The host of the game removed you.', [
-			{ text: 'OK' },
-		]);
-	};
+	const {
+		memberships,
+		pushToken,
+		currentGameId,
+		upsertMembership,
+		removeMembership,
+		setCurrentGame,
+	} = useGameStore();
 
 	const iconAnim = useRef(new Animated.Value(1)).current;
 
@@ -88,48 +114,120 @@ export default function HomeScreen() {
 		return () => clearTimeout(timer);
 	}, []);
 
-	const handleContinue = async () => {
-		if (!gameId) return;
-		setLoading(true);
-		try {
-			const snap = await getDoc(doc(db, 'games', gameId));
-			if (!snap.exists() || snap.data().status === 'cancelled') {
-				reset();
-				return;
-			}
-			const status = snap.data().status;
-			if (!playerId) {
-				reset();
+	useEffect(() => {
+		let cancelled = false;
+
+		const loadSessions = async () => {
+			if (memberships.length === 0) {
+				setSessionSummaries([]);
+				setLoadingSessions(false);
 				return;
 			}
 
-			if (status === 'lobby' || status === 'active' || status === 'finished') {
+			setLoadingSessions(true);
+			const nextSummaries: SavedSessionSummary[] = [];
+			const staleGameIds: string[] = [];
+
+			for (const membership of memberships) {
 				try {
-					await getDoc(doc(db, 'games', gameId, 'players', playerId));
+					const snap = await getDoc(doc(db, 'games', membership.gameId));
+					if (!snap.exists()) {
+						staleGameIds.push(membership.gameId);
+						continue;
+					}
+
+					const game = { id: snap.id, ...snap.data() } as Game;
+					if (game.status === 'finished' || game.status === 'cancelled') {
+						staleGameIds.push(membership.gameId);
+						continue;
+					}
+
+					nextSummaries.push({ membership, game });
 				} catch (error) {
 					const code =
 						error instanceof Error && 'code' in error
 							? (error as Error & { code?: string }).code
 							: undefined;
 					if (code === 'permission-denied') {
-						clearRemovedSession();
-						return;
+						staleGameIds.push(membership.gameId);
 					}
-					throw error;
 				}
 			}
 
-			if (status === 'lobby') router.replace(`/game/${gameId}/lobby`);
-			else if (status === 'active') router.replace(`/game/${gameId}/play`);
-			else if (status === 'finished') router.replace(`/game/${gameId}/winner`);
-			else reset();
+			if (cancelled) return;
+
+			if (staleGameIds.length > 0) {
+				staleGameIds.forEach((gameId) => removeMembership(gameId));
+			}
+
+			setSessionSummaries(nextSummaries);
+			setLoadingSessions(false);
+		};
+
+		loadSessions();
+
+		return () => {
+			cancelled = true;
+		};
+	}, [memberships, removeMembership]);
+
+	const canAddMembership = memberships.length < MAX_MEMBERSHIPS;
+
+	const showMembershipLimitAlert = () => {
+		Alert.alert(
+			'Game limit reached',
+			`You can only be part of ${MAX_MEMBERSHIPS} games at the same time. Leave one first.`,
+		);
+	};
+
+	const clearRemovedSession = (gameId: string) => {
+		removeMembership(gameId);
+		Alert.alert('Removed from game', 'The host of the game removed you.', [
+			{ text: 'OK' },
+		]);
+	};
+
+	const handleResume = async (membership: SavedMembership) => {
+		setLoading(true);
+		try {
+			const snap = await getDoc(doc(db, 'games', membership.gameId));
+			if (!snap.exists()) {
+				removeMembership(membership.gameId);
+				return;
+			}
+
+			const game = { id: snap.id, ...snap.data() } as Game;
+			const route = routeForGame(membership.gameId, game.status);
+			if (!route) {
+				removeMembership(membership.gameId);
+				return;
+			}
+
+			try {
+				await getDoc(
+					doc(db, 'games', membership.gameId, 'players', membership.playerId),
+				);
+			} catch (error) {
+				const code =
+					error instanceof Error && 'code' in error
+						? (error as Error & { code?: string }).code
+						: undefined;
+				if (code === 'permission-denied') {
+					clearRemovedSession(membership.gameId);
+					return;
+				}
+				throw error;
+			}
+
+			setCurrentGame(membership.gameId);
+			router.replace(route);
 		} catch (error) {
 			const code =
 				error instanceof Error && 'code' in error
 					? (error as Error & { code?: string }).code
 					: undefined;
 			if (code === 'permission-denied') {
-				clearRemovedSession();
+				clearRemovedSession(membership.gameId);
 				return;
 			}
 			Alert.alert('Error', 'Could not resume game. Check your connection.');
@@ -138,7 +236,79 @@ export default function HomeScreen() {
 		}
 	};
 
+	const handleLeaveSavedSession = async (membership: SavedMembership) => {
+		setLoading(true);
+		try {
+			const snap = await getDoc(doc(db, 'games', membership.gameId));
+			if (!snap.exists()) {
+				removeMembership(membership.gameId);
+				return;
+			}
+
+			const game = snap.data() as Game;
+			if (game.status === 'lobby') {
+				try {
+					if (membership.isHost) {
+						await cancelGame(membership.gameId);
+					} else {
+						await leaveGame(membership.gameId, membership.playerId);
+					}
+				} catch (error) {
+					const code =
+						error instanceof Error && 'code' in error
+							? (error as Error & { code?: string }).code
+							: undefined;
+					if (code === 'permission-denied') {
+						removeMembership(membership.gameId);
+						return;
+					}
+					throw error;
+				}
+			}
+
+			removeMembership(membership.gameId);
+		} catch (error) {
+			const code =
+				error instanceof Error && 'code' in error
+					? (error as Error & { code?: string }).code
+					: undefined;
+			if (code === 'permission-denied') {
+				removeMembership(membership.gameId);
+				return;
+			}
+			Alert.alert(
+				'Error',
+				'Could not leave the saved game. Check your connection.',
+			);
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	const openSessionActions = (summary: SavedSessionSummary) => {
+		const quitLabel =
+			summary.membership.isHost && summary.game.status === 'lobby'
+				? 'Close lobby'
+				: 'Quit';
+		const description =
+			summary.membership.isHost && summary.game.status === 'lobby'
+				? `Closing this lobby will remove all players from ${getGameDisplayName(summary.game)}.`
+				: `${summary.membership.nickname} in ${summary.game.hostNickname}'s game`;
+		Alert.alert(getGameDisplayName(summary.game), description, [
+			{ text: 'Cancel', style: 'cancel' },
+			{
+				text: quitLabel,
+				style: 'destructive',
+				onPress: () => handleLeaveSavedSession(summary.membership),
+			},
+		]);
+	};
+
 	const handleCreate = async () => {
+		if (!gameName.trim()) {
+			Alert.alert('Missing game name', 'Enter a name before creating a game.');
+			return;
+		}
 		if (!nickname.trim()) {
 			Alert.alert(
 				'Missing nickname',
@@ -153,14 +323,25 @@ export default function HomeScreen() {
 			);
 			return;
 		}
+		if (!canAddMembership) {
+			showMembershipLimitAlert();
+			return;
+		}
+
 		setLoading(true);
 		try {
-			const { gameId: newGameId, playerId } = await createGame(
+			const { gameId, playerId } = await createGame(
+				gameName.trim(),
 				nickname.trim(),
 				pushToken,
 			);
-			setSession(playerId, nickname.trim(), newGameId, true);
-			router.replace(`/game/${newGameId}/lobby`);
+			upsertMembership({
+				gameId,
+				playerId,
+				nickname: nickname.trim(),
+				isHost: true,
+			});
+			router.replace(`/game/${gameId}/lobby?welcome=1`);
 		} catch {
 			Alert.alert(
 				'Error',
@@ -187,6 +368,7 @@ export default function HomeScreen() {
 			);
 			return;
 		}
+
 		setLoading(true);
 		try {
 			const game = await getGameByCode(joinCode.trim());
@@ -204,8 +386,28 @@ export default function HomeScreen() {
 				);
 				return;
 			}
+
+			const existingMembership = memberships.find(
+				(membership) => membership.gameId === game.id,
+			);
+			if (existingMembership) {
+				setCurrentGame(game.id);
+				router.replace(`/game/${game.id}/lobby`);
+				return;
+			}
+
+			if (!canAddMembership) {
+				showMembershipLimitAlert();
+				return;
+			}
+
 			const { playerId } = await joinGame(game.id, nickname.trim(), pushToken);
-			setSession(playerId, nickname.trim(), game.id, false);
+			upsertMembership({
+				gameId: game.id,
+				playerId,
+				nickname: nickname.trim(),
+				isHost: false,
+			});
 			router.replace(`/game/${game.id}/lobby`);
 		} catch (error) {
 			if (isGameBannedError(error)) {
@@ -221,53 +423,37 @@ export default function HomeScreen() {
 		}
 	};
 
-	const handleLeaveCurrentSession = async () => {
-		if (!gameId || !playerId) {
-			reset();
-			return;
-		}
-
-		setLoading(true);
-		try {
-			const snap = await getDoc(doc(db, 'games', gameId));
-			if (!snap.exists()) {
-				reset();
-				return;
-			}
-
-			if (snap.data().status === 'lobby') {
-				try {
-					await leaveGame(gameId, playerId);
-				} catch (error) {
-					const code =
-						error instanceof Error && 'code' in error
-							? (error as Error & { code?: string }).code
-							: undefined;
-					if (code === 'permission-denied') {
-						reset();
-						return;
-					}
-					throw error;
+	const renderHomeActions = () => (
+		<View style={styles.actions}>
+			<Text style={styles.sessionCount}>
+				{memberships.length}/{MAX_MEMBERSHIPS} games joined
+			</Text>
+			<TouchableOpacity
+				style={[
+					styles.primaryButton,
+					(!canAddMembership || loading) && styles.buttonDisabled,
+				]}
+				onPress={() =>
+					canAddMembership ? setMode('create') : showMembershipLimitAlert()
 				}
-			}
-			reset();
-		} catch (error) {
-			const code =
-				error instanceof Error && 'code' in error
-					? (error as Error & { code?: string }).code
-					: undefined;
-			if (code === 'permission-denied') {
-				reset();
-				return;
-			}
-			Alert.alert(
-				'Error',
-				'Could not leave the saved game. Check your connection.',
-			);
-		} finally {
-			setLoading(false);
-		}
-	};
+				disabled={loading}
+			>
+				<Text style={styles.primaryButtonText}>create</Text>
+			</TouchableOpacity>
+			<TouchableOpacity
+				style={[
+					styles.secondaryButton,
+					(!canAddMembership || loading) && styles.buttonDisabled,
+				]}
+				onPress={() =>
+					canAddMembership ? setMode('join') : showMembershipLimitAlert()
+				}
+				disabled={loading}
+			>
+				<Text style={styles.secondaryButtonText}>join</Text>
+			</TouchableOpacity>
+		</View>
+	);
 
 	return (
 		<SafeAreaView style={styles.safe}>
@@ -309,62 +495,68 @@ export default function HomeScreen() {
 								</Text>
 							</View>
 
-							<View style={styles.actions}>
-								{gameId ? (
-									<>
-										<TouchableOpacity
-											style={[
-												styles.primaryButton,
-												loading && styles.buttonDisabled,
-											]}
-											onPress={handleContinue}
-											disabled={loading}
-										>
-											{loading ? (
-												<ActivityIndicator color="#fff" />
-											) : (
-												<Text style={styles.primaryButtonText}>
-													continue game
-												</Text>
-											)}
-										</TouchableOpacity>
-										<TouchableOpacity
-											onPress={() =>
-												Alert.alert(
-													'leave?',
-													'If the game is still in the lobby, your spot will be removed. Otherwise this clears it from this device.',
-													[
-														{ text: 'Stay', style: 'cancel' },
-														{
-															text: 'Leave game',
-															style: 'destructive',
-															onPress: handleLeaveCurrentSession,
-														},
-													],
-												)
-											}
-											style={styles.backButton}
-										>
-											<Text style={styles.backButtonText}>leave game</Text>
-										</TouchableOpacity>
-									</>
-								) : (
-									<>
-										<TouchableOpacity
-											style={styles.primaryButton}
-											onPress={() => setMode('create')}
-										>
-											<Text style={styles.primaryButtonText}>create</Text>
-										</TouchableOpacity>
-										<TouchableOpacity
-											style={styles.secondaryButton}
-											onPress={() => setMode('join')}
-										>
-											<Text style={styles.secondaryButtonText}>join</Text>
-										</TouchableOpacity>
-									</>
-								)}
-							</View>
+							{sessionSummaries.length > 0 ? (
+								<View style={styles.sessionSection}>
+									<View style={styles.sessionSectionHeader}>
+										{loadingSessions && (
+											<ActivityIndicator color={colors.primary} size="small" />
+										)}
+									</View>
+									<View style={styles.sessionList}>
+										{sessionSummaries.map((summary) => (
+											<TouchableOpacity
+												key={summary.membership.gameId}
+												style={[
+													styles.sessionCard,
+													currentGameId === summary.membership.gameId &&
+														styles.sessionCardCurrent,
+												]}
+												onPress={() => handleResume(summary.membership)}
+												activeOpacity={0.85}
+											>
+												<View style={styles.sessionCardTop}>
+													<View style={styles.sessionCardBody}>
+														<View style={styles.sessionTitleRow}>
+															<Text style={styles.sessionTitle}>
+																{getGameDisplayName(summary.game)}
+															</Text>
+														</View>
+														<Text style={styles.sessionCode}>
+															{summary.game.code}
+														</Text>
+														<Text style={styles.sessionMeta}>
+															{summary.membership.isHost
+																? 'You are the host'
+																: `Hosted by ${summary.game.hostNickname}`}
+															{' · '}
+															Playing as {summary.membership.nickname}
+														</Text>
+													</View>
+												</View>
+												<View style={styles.sessionTrashSlot}>
+													<TouchableOpacity
+														style={styles.sessionTrashButton}
+														onPress={() => openSessionActions(summary)}
+														hitSlop={8}
+													>
+														<View style={styles.sessionTrashIcon}>
+															<View style={styles.sessionTrashLid} />
+															<View style={styles.sessionTrashBody}>
+																<View style={styles.sessionTrashLine} />
+																<View style={styles.sessionTrashLine} />
+																<View style={styles.sessionTrashLine} />
+															</View>
+														</View>
+													</TouchableOpacity>
+												</View>
+											</TouchableOpacity>
+										))}
+									</View>
+									{renderHomeActions()}
+								</View>
+							) : (
+								renderHomeActions()
+							)}
 						</View>
 					) : (
 						<View style={styles.header}>
@@ -396,6 +588,17 @@ export default function HomeScreen() {
 
 					{mode === 'create' && (
 						<View style={styles.form}>
+							<Text style={styles.label}>Game name</Text>
+							<TextInput
+								style={styles.input}
+								placeholder="e.g. Paris Trip"
+								placeholderTextColor={colors.textLight}
+								value={gameName}
+								onChangeText={setGameName}
+								maxLength={32}
+								autoFocus
+							/>
+
 							<Text style={styles.label}>Your nickname</Text>
 							<TextInput
 								style={styles.input}
@@ -404,7 +607,6 @@ export default function HomeScreen() {
 								value={nickname}
 								onChangeText={setNickname}
 								maxLength={20}
-								autoFocus
 							/>
 
 							<View style={styles.policyRow}>
@@ -476,7 +678,7 @@ export default function HomeScreen() {
 								placeholder="ABC123"
 								placeholderTextColor={colors.textLight}
 								value={joinCode}
-								onChangeText={(t) => setJoinCode(t.toUpperCase())}
+								onChangeText={(text) => setJoinCode(text.toUpperCase())}
 								maxLength={6}
 								autoCapitalize="characters"
 							/>
@@ -518,7 +720,7 @@ export default function HomeScreen() {
 								disabled={loading}
 							>
 								<Text style={styles.primaryButtonText}>
-									{loading ? 'Joining…' : 'Join game'}
+									{loading ? 'joining…' : 'join game'}
 								</Text>
 							</TouchableOpacity>
 
@@ -531,13 +733,12 @@ export default function HomeScreen() {
 						</View>
 					)}
 
-					{/* Accordions — pinned to bottom */}
 					{mode === 'home' && (
 						<View style={styles.accordions}>
 							<View style={styles.rules}>
 								<TouchableOpacity
 									style={styles.rulesToggle}
-									onPress={() => setRulesOpen((o) => !o)}
+									onPress={() => setRulesOpen((open) => !open)}
 								>
 									<Text style={styles.rulesToggleText}>how to play</Text>
 									<Text style={styles.rulesChevron}>
@@ -546,10 +747,10 @@ export default function HomeScreen() {
 								</TouchableOpacity>
 								{rulesOpen && (
 									<View style={styles.rulesList}>
-										{RULES.map((r, i) => (
-											<View key={i} style={styles.ruleRow}>
-												<Text style={styles.ruleEmoji}>{r.emoji}</Text>
-												<Text style={styles.ruleText}>{r.text}</Text>
+										{RULES.map((rule, index) => (
+											<View key={index} style={styles.ruleRow}>
+												<Text style={styles.ruleEmoji}>{rule.emoji}</Text>
+												<Text style={styles.ruleText}>{rule.text}</Text>
 											</View>
 										))}
 									</View>
@@ -558,7 +759,7 @@ export default function HomeScreen() {
 							<View style={[styles.rules, { marginTop: spacing.sm }]}>
 								<TouchableOpacity
 									style={styles.rulesToggle}
-									onPress={() => setInfoOpen((o) => !o)}
+									onPress={() => setInfoOpen((open) => !open)}
 								>
 									<Text style={styles.rulesToggleText}>about</Text>
 									<Text style={styles.rulesChevron}>
@@ -568,8 +769,8 @@ export default function HomeScreen() {
 								{infoOpen && (
 									<View style={styles.rulesList}>
 										<Text style={styles.ruleText}>
-											No account needed. bingoo uses anonymous sign-in — your
-											real identity is never collected or stored.
+											bingoo uses anonymous sign-in. Your real identity is never
+											collected or stored.
 										</Text>
 										<TouchableOpacity
 											style={styles.infoLink}
@@ -683,9 +884,124 @@ const styles = StyleSheet.create({
 		color: colors.textLight,
 		marginTop: spacing.xs,
 	},
+	sessionSection: {
+		gap: spacing.lg,
+	},
+	sessionSectionHeader: {
+		flexDirection: 'row',
+		justifyContent: 'space-between',
+		alignItems: 'center',
+	},
+	sectionLabel: {
+		fontSize: fontSize.sm,
+		color: colors.textLight,
+		fontWeight: '600',
+		textTransform: 'uppercase',
+		letterSpacing: 0.5,
+	},
+	sessionList: {
+		gap: spacing.sm,
+	},
+	sessionCard: {
+		backgroundColor: colors.surface,
+		borderRadius: radius.md,
+		borderWidth: 1.5,
+		borderColor: colors.border,
+		paddingVertical: spacing.sm + 5,
+		paddingLeft: spacing.sm + 4,
+		paddingRight: 52,
+		position: 'relative',
+	},
+	sessionCardCurrent: {
+		borderColor: colors.primary,
+		shadowColor: colors.primary,
+		shadowOpacity: 0.08,
+		shadowRadius: 8,
+		shadowOffset: { width: 0, height: 4 },
+	},
+	sessionCardTop: {
+		flexDirection: 'row',
+		alignItems: 'flex-start',
+		gap: spacing.sm,
+	},
+	sessionCardBody: {
+		flex: 1,
+		gap: 2,
+		paddingRight: 40,
+	},
+	sessionTitleRow: {
+		paddingRight: 56,
+	},
+	sessionTitle: {
+		fontSize: fontSize.md,
+		color: colors.text,
+		fontWeight: '700',
+	},
+	sessionCode: {
+		fontSize: fontSize.sm,
+		color: colors.primary,
+		fontWeight: '600',
+	},
+	sessionMeta: {
+		fontSize: fontSize.sm,
+		color: colors.textLight,
+		lineHeight: 16,
+	},
+	sessionTrashSlot: {
+		position: 'absolute',
+		right: spacing.md,
+		top: 0,
+		bottom: 0,
+		width: 32,
+		alignItems: 'center',
+		justifyContent: 'center',
+	},
+	sessionTrashButton: {
+		width: 32,
+		height: 32,
+		borderRadius: radius.full,
+		backgroundColor: colors.background,
+		alignItems: 'center',
+		justifyContent: 'center',
+		borderWidth: 1,
+		borderColor: colors.border,
+	},
+	sessionTrashIcon: {
+		alignItems: 'center',
+		justifyContent: 'center',
+	},
+	sessionTrashLid: {
+		width: 12,
+		height: 2,
+		borderRadius: 2,
+		backgroundColor: colors.textLight,
+		marginBottom: 1,
+	},
+	sessionTrashBody: {
+		width: 10,
+		height: 11,
+		borderWidth: 1.5,
+		borderColor: colors.textLight,
+		borderTopWidth: 2,
+		borderRadius: 2,
+		paddingHorizontal: 1,
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+	},
+	sessionTrashLine: {
+		width: 1,
+		height: 6,
+		backgroundColor: colors.textLight,
+	},
 	actions: {
 		gap: spacing.md,
 		alignItems: 'center',
+	},
+	sessionCount: {
+		fontSize: fontSize.sm,
+		color: colors.textLight,
+		fontWeight: '600',
 	},
 	form: { gap: spacing.md, marginTop: spacing.xl },
 	label: {

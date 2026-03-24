@@ -24,14 +24,23 @@ async function waitForHydration(): Promise<void> {
 }
 
 async function syncPushToken(): Promise<void> {
-  const { pushToken, setPushToken, gameId, playerId } = useGameStore.getState();
-  if (!gameId || !playerId) return;
+  const { pushToken, setPushToken, memberships } = useGameStore.getState();
+  if (memberships.length === 0) return;
   const token = await registerForPushNotifications();
   if (!token) return;
-  if (token !== pushToken) {
-    setPushToken(token);
-    savePushToken(gameId, playerId, token).catch(() => {});
-  }
+  if (token === pushToken) return;
+  setPushToken(token);
+  await Promise.all(
+    memberships.map((membership) =>
+      savePushToken(membership.gameId, membership.playerId, token).catch(() => {}),
+    ),
+  );
+}
+
+function getRouteForStatus(gameId: string, status: string): string | null {
+  if (status === 'lobby') return `/game/${gameId}/lobby`;
+  if (status === 'active') return `/game/${gameId}/play`;
+  return null;
 }
 
 export default function RootLayout() {
@@ -50,30 +59,55 @@ export default function RootLayout() {
       return;
     }
 
-    const { gameId, reset } = useGameStore.getState();
+    const { memberships, currentGameId, pruneMemberships, setCurrentGame } = useGameStore.getState();
 
-    if (gameId) {
+    if (memberships.length > 0) {
+      const gameIdsToRemove: string[] = [];
+      const routesByGameId = new Map<string, string>();
+
       try {
-        const snap = await getDoc(doc(db, 'games', gameId));
-        if (snap.exists()) {
-          const status = snap.data().status;
-          if (status === 'lobby') {
-            setReady(true);
-            router.replace(`/game/${gameId}/lobby`);
-            return;
-          } else if (status === 'active') {
-            setReady(true);
-            router.replace(`/game/${gameId}/play`);
-            return;
-          } else if (status === 'finished') {
-            setReady(true);
-            router.replace(`/game/${gameId}/winner`);
-            return;
+        for (const membership of memberships) {
+          try {
+            const snap = await getDoc(doc(db, 'games', membership.gameId));
+            if (!snap.exists()) {
+              gameIdsToRemove.push(membership.gameId);
+              continue;
+            }
+
+            const status = snap.data().status;
+            const route = getRouteForStatus(membership.gameId, status);
+            if (route) routesByGameId.set(membership.gameId, route);
+            else gameIdsToRemove.push(membership.gameId);
+          } catch (error) {
+            const code =
+              error instanceof Error && 'code' in error
+                ? (error as Error & { code?: string }).code
+                : undefined;
+            if (code === 'permission-denied') {
+              gameIdsToRemove.push(membership.gameId);
+              continue;
+            }
+            throw error;
           }
         }
-        reset();
+
+        if (gameIdsToRemove.length > 0) {
+          pruneMemberships(gameIdsToRemove);
+        }
+
+        const nextCurrentGameId =
+          (currentGameId && routesByGameId.has(currentGameId) && currentGameId) ||
+          memberships.find((membership) => routesByGameId.has(membership.gameId))?.gameId ||
+          null;
+
+        if (nextCurrentGameId) {
+          setCurrentGame(nextCurrentGameId);
+          setReady(true);
+          router.replace(routesByGameId.get(nextCurrentGameId)!);
+          return;
+        }
       } catch {
-        // Preserve the local session if we can't reach Firestore yet.
+        // Preserve local memberships if we can't reach Firestore yet.
         setReady(true);
         return;
       }

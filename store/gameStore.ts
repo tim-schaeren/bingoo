@@ -3,79 +3,130 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Game, Player, Prediction, Mark } from '../lib/firestore';
 
-interface GameState {
-  // Current session — persisted to AsyncStorage
-  playerId: string | null;
-  nickname: string | null;
-  gameId: string | null;
+export const MAX_MEMBERSHIPS = 3;
+
+export interface SavedMembership {
+  gameId: string;
+  playerId: string;
+  nickname: string;
   isHost: boolean;
+}
+
+interface GameState {
+  // Persisted state
+  memberships: SavedMembership[];
+  currentGameId: string | null;
   pushToken: string | null;
 
-  // Live game data (populated by Firestore listeners — not persisted)
+  // Live game data (for the currently opened game screen only)
   game: Game | null;
   players: Player[];
   predictions: Prediction[];
   marks: Mark[];
-  myCard: string[] | null; // flat array of predictionIds, length = gridSize²
+  myCard: string[] | null;
 
   // Actions
   setPushToken: (token: string | null) => void;
-  setSession: (playerId: string, nickname: string, gameId: string, isHost: boolean) => void;
-  setGame: (game: Game) => void;
+  upsertMembership: (membership: SavedMembership) => void;
+  removeMembership: (gameId: string) => void;
+  pruneMemberships: (gameIdsToRemove: string[]) => void;
+  setCurrentGame: (gameId: string | null) => void;
+  clearLiveGame: () => void;
+  resetAll: () => void;
+  setGame: (game: Game | null) => void;
   setPlayers: (players: Player[]) => void;
   setPredictions: (predictions: Prediction[]) => void;
   setMarks: (marks: Mark[]) => void;
-  setMyCard: (grid: string[]) => void;
-  reset: () => void;
+  setMyCard: (grid: string[] | null) => void;
+}
+
+const emptyLiveState = {
+  game: null,
+  players: [],
+  predictions: [],
+  marks: [],
+  myCard: null,
+};
+
+function upsertMembershipList(
+  memberships: SavedMembership[],
+  nextMembership: SavedMembership,
+): SavedMembership[] {
+  const existingWithoutCurrent = memberships.filter(
+    (membership) => membership.gameId !== nextMembership.gameId,
+  );
+  return [...existingWithoutCurrent, nextMembership].slice(-MAX_MEMBERSHIPS);
 }
 
 export const useGameStore = create<GameState>()(
   persist(
-    set => ({
-      playerId: null,
-      nickname: null,
-      gameId: null,
-      isHost: false,
+    (set, get) => ({
+      memberships: [],
+      currentGameId: null,
       pushToken: null,
-      game: null,
-      players: [],
-      predictions: [],
-      marks: [],
-      myCard: null,
+      ...emptyLiveState,
 
-      setPushToken: token => set({ pushToken: token }),
-      setSession: (playerId, nickname, gameId, isHost) =>
-        set({ playerId, nickname, gameId, isHost }),
-      setGame: game => set({ game }),
-      setPlayers: players => set({ players }),
-      setPredictions: predictions => set({ predictions }),
-      setMarks: marks => set({ marks }),
-      setMyCard: myCard => set({ myCard }),
-      reset: () =>
-        set({
-          playerId: null,
-          nickname: null,
-          gameId: null,
-          isHost: false,
-          pushToken: null,
-          game: null,
-          players: [],
-          predictions: [],
-          marks: [],
-          myCard: null,
+      setPushToken: (token) => set({ pushToken: token }),
+      upsertMembership: (membership) =>
+        set((state) => ({
+          memberships: upsertMembershipList(state.memberships, membership),
+          currentGameId: membership.gameId,
+        })),
+      removeMembership: (gameId) =>
+        set((state) => {
+          const memberships = state.memberships.filter(
+            (membership) => membership.gameId !== gameId,
+          );
+          const isCurrent = state.currentGameId === gameId;
+          return {
+            memberships,
+            currentGameId: isCurrent ? memberships.at(-1)?.gameId ?? null : state.currentGameId,
+            ...(isCurrent ? emptyLiveState : {}),
+          };
         }),
+      pruneMemberships: (gameIdsToRemove) =>
+        set((state) => {
+          if (gameIdsToRemove.length === 0) return state;
+          const removed = new Set(gameIdsToRemove);
+          const memberships = state.memberships.filter(
+            (membership) => !removed.has(membership.gameId),
+          );
+          const currentRemoved =
+            state.currentGameId != null && removed.has(state.currentGameId);
+          return {
+            memberships,
+            currentGameId: currentRemoved
+              ? memberships.at(-1)?.gameId ?? null
+              : state.currentGameId,
+            ...(currentRemoved ? emptyLiveState : {}),
+          };
+        }),
+      setCurrentGame: (gameId) => {
+        if (gameId === get().currentGameId) return;
+        set({ currentGameId: gameId, ...emptyLiveState });
+      },
+      clearLiveGame: () => set({ ...emptyLiveState }),
+      resetAll: () =>
+        set({
+          memberships: [],
+          currentGameId: null,
+          pushToken: null,
+          ...emptyLiveState,
+        }),
+      setGame: (game) => set({ game }),
+      setPlayers: (players) => set({ players }),
+      setPredictions: (predictions) => set({ predictions }),
+      setMarks: (marks) => set({ marks }),
+      setMyCard: (myCard) => set({ myCard }),
     }),
     {
       name: 'bingoo-session',
       storage: createJSONStorage(() => AsyncStorage),
-      // Only persist the session fields — live data is always re-fetched
-      partialize: state => ({
-        playerId: state.playerId,
-        nickname: state.nickname,
-        gameId: state.gameId,
-        isHost: state.isHost,
+      partialize: (state) => ({
+        memberships: state.memberships,
+        currentGameId: state.currentGameId,
         pushToken: state.pushToken,
       }),
-    }
-  )
+    },
+  ),
 );
