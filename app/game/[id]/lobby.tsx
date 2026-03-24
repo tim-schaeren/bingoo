@@ -27,6 +27,7 @@ import {
 	cancelGame,
 	leaveGame,
 	banPlayerFromGame,
+	isInsufficientPredictionsError,
 	reportPlayer,
 	reportPrediction,
 	setReaction,
@@ -34,7 +35,13 @@ import {
 	type Prediction,
 	type Player,
 	type ReportReason,
+	MAX_PREDICTION_LENGTH,
 } from '../../../lib/firestore';
+import {
+	getMinVisiblePredictions,
+	MIN_CARD_CELLS,
+	REQUIRED_PREDICTIONS_PER_PLAYER,
+} from '../../../lib/gameLogic';
 import { useGameStore } from '../../../store/gameStore';
 import { sendPushNotifications } from '../../../lib/notifications';
 import { feedbackDone, feedbackStart } from '../../../lib/feedback';
@@ -46,7 +53,6 @@ import { WelcomeModal } from '../../../components/lobby/WelcomeModal';
 import { ReportModal } from '../../../components/ReportModal';
 import { ActionModal } from '../../../components/ActionModal';
 
-const PREDICTIONS_PER_PLAYER = 2;
 const MIN_PLAYERS = 3;
 
 function getGameDisplayName(code: string, name?: string): string {
@@ -96,9 +102,10 @@ export default function LobbyScreen() {
 	const autoSubmittedRef = useRef(false);
 	const editingRef = useRef(false);
 	const wasRemovedRef = useRef(false);
+	const isLeavingRef = useRef(false);
 
 	const handleRemovedFromGame = () => {
-		if (wasRemovedRef.current || !gameId) return;
+		if (wasRemovedRef.current || isLeavingRef.current || !gameId) return;
 		wasRemovedRef.current = true;
 		removeMembership(gameId);
 		Alert.alert('Removed from game', 'The host of the game removed you.', [
@@ -180,20 +187,42 @@ export default function LobbyScreen() {
 	const allSubjectsFull =
 		otherPlayers.length >= MIN_PLAYERS - 1 &&
 		otherPlayers.every(
-			(p) => (globalCountBySubject.get(p.id) ?? 0) >= PREDICTIONS_PER_PLAYER,
+			(p) =>
+				(globalCountBySubject.get(p.id) ?? 0) >=
+				REQUIRED_PREDICTIONS_PER_PLAYER,
+		);
+	const minVisiblePredictions = getMinVisiblePredictions(players, predictions);
+	const hasEnoughPredictionsToStart =
+		minVisiblePredictions >= MIN_CARD_CELLS &&
+		players.every(
+			(player) =>
+				(globalCountBySubject.get(player.id) ?? 0) >=
+				REQUIRED_PREDICTIONS_PER_PLAYER,
 		);
 
 	// Auto-select first subject with room when players load or predictions change
 	useEffect(() => {
-		if (
-			!selectedSubjectId ||
-			(globalCountBySubject.get(selectedSubjectId) ?? 0) >=
-				PREDICTIONS_PER_PLAYER
-		) {
-			const first = otherPlayers.find(
-				(p) => (globalCountBySubject.get(p.id) ?? 0) < PREDICTIONS_PER_PLAYER,
-			);
-			if (first) setSelectedSubjectId(first.id);
+		const selectedStillPresent = otherPlayers.some(
+			(player) => player.id === selectedSubjectId,
+		);
+		const selectedHasRoom =
+			selectedSubjectId != null &&
+			(globalCountBySubject.get(selectedSubjectId) ?? 0) <
+				REQUIRED_PREDICTIONS_PER_PLAYER;
+
+		if (selectedStillPresent && selectedHasRoom) return;
+
+		const nextWithRoom =
+			otherPlayers.find(
+				(player) =>
+					(globalCountBySubject.get(player.id) ?? 0) <
+					REQUIRED_PREDICTIONS_PER_PLAYER,
+			) ?? null;
+		const fallbackPlayer = otherPlayers[0] ?? null;
+		const nextSubjectId = nextWithRoom?.id ?? fallbackPlayer?.id ?? null;
+
+		if (nextSubjectId !== selectedSubjectId) {
+			setSelectedSubjectId(nextSubjectId);
 		}
 	}, [players, predictions]);
 
@@ -227,16 +256,17 @@ export default function LobbyScreen() {
 	const handleAddPrediction = async () => {
 		if (!playerId || !gameId || !selectedSubjectId || !predText.trim()) return;
 		const globalCount = globalCountBySubject.get(selectedSubjectId) ?? 0;
-		if (globalCount >= PREDICTIONS_PER_PLAYER) return;
+		if (globalCount >= REQUIRED_PREDICTIONS_PER_PLAYER) return;
 		setAdding(true);
 		try {
 			await addPrediction(gameId, playerId, selectedSubjectId, predText.trim());
 			setPredText('');
-			if (globalCount + 1 >= PREDICTIONS_PER_PLAYER) {
+			if (globalCount + 1 >= REQUIRED_PREDICTIONS_PER_PLAYER) {
 				const next = otherPlayers.find(
 					(p) =>
 						p.id !== selectedSubjectId &&
-						(globalCountBySubject.get(p.id) ?? 0) < PREDICTIONS_PER_PLAYER,
+						(globalCountBySubject.get(p.id) ?? 0) <
+						REQUIRED_PREDICTIONS_PER_PLAYER,
 				);
 				if (next) setSelectedSubjectId(next.id);
 			}
@@ -372,6 +402,13 @@ export default function LobbyScreen() {
 
 	const handleStartGame = async () => {
 		if (!gameId) return;
+		if (!hasEnoughPredictionsToStart) {
+			Alert.alert(
+				'Not enough predictions',
+				`Every remaining player needs at least ${MIN_CARD_CELLS} visible predictions before the game can start. Ask players to edit their predictions first.`,
+			);
+			return;
+		}
 		if (!allSubmitted) {
 			Alert.alert(
 				'Not everyone is ready',
@@ -400,8 +437,12 @@ export default function LobbyScreen() {
 				'game started! 🎰',
 				'Check your bingoo card.',
 			);
-		} catch {
-			Alert.alert('Error', 'Could not start game. Try again.');
+		} catch (error) {
+			if (isInsufficientPredictionsError(error)) {
+				Alert.alert('Not enough predictions', error.message);
+			} else {
+				Alert.alert('Error', 'Could not start game. Try again.');
+			}
 			setStarting(false);
 		}
 	};
@@ -435,11 +476,13 @@ export default function LobbyScreen() {
 				text: 'Leave',
 				style: 'destructive',
 				onPress: async () => {
+					isLeavingRef.current = true;
 					try {
 						await leaveGame(gameId!, playerId!);
 						removeMembership(gameId!);
 						router.replace('/');
 					} catch {
+						isLeavingRef.current = false;
 						Alert.alert('Error', 'Could not leave the game. Try again.');
 					}
 				},
@@ -462,7 +505,7 @@ export default function LobbyScreen() {
 		!!selectedSubjectId &&
 		predText.trim().length > 0 &&
 		!adding &&
-		selectedSubjectCount < PREDICTIONS_PER_PLAYER;
+		selectedSubjectCount < REQUIRED_PREDICTIONS_PER_PLAYER;
 
 	return (
 		<SafeAreaView style={styles.safe}>
@@ -510,6 +553,7 @@ export default function LobbyScreen() {
 									playerId={playerId!}
 									submitted={submitted}
 									getPlayerName={getPlayerName}
+									onDelete={handleDeletePrediction}
 									onReact={handleReaction}
 									reactionPickerOpen={reactionPickerFor === p.id}
 									onTogglePicker={() =>
@@ -536,7 +580,7 @@ export default function LobbyScreen() {
 							<View style={styles.progressRow}>
 								{otherPlayers.map((p) => {
 									const count = globalCountBySubject.get(p.id) ?? 0;
-									const full = count >= PREDICTIONS_PER_PLAYER;
+									const full = count >= REQUIRED_PREDICTIONS_PER_PLAYER;
 									return (
 										<View
 											key={p.id}
@@ -560,7 +604,7 @@ export default function LobbyScreen() {
 													full && styles.progressCountDone,
 												]}
 											>
-												{`${count}/${PREDICTIONS_PER_PLAYER}`}
+												{`${count}/${REQUIRED_PREDICTIONS_PER_PLAYER}`}
 											</Text>
 										</View>
 									);
@@ -587,10 +631,11 @@ export default function LobbyScreen() {
 										onChangeText={setPredText}
 										returnKeyType="done"
 										onSubmitEditing={handleAddPrediction}
-										maxLength={120}
+										maxLength={MAX_PREDICTION_LENGTH}
 										editable={
 											!!selectedSubjectId &&
-											selectedSubjectCount < PREDICTIONS_PER_PLAYER
+											selectedSubjectCount <
+												REQUIRED_PREDICTIONS_PER_PLAYER
 										}
 									/>
 								</View>
@@ -618,7 +663,9 @@ export default function LobbyScreen() {
 						<View style={styles.waitingBox}>
 							<Text style={styles.waitingTitle}>Predictions submitted!</Text>
 							<Text style={styles.waitingText}>
-								{allSubmitted
+								{!hasEnoughPredictionsToStart
+									? `The lobby changed, so there are not enough predictions to start. Each player needs at least ${MIN_CARD_CELLS} visible predictions and enough predictions written about them.`
+									: allSubmitted
 									? isHost
 										? 'Everyone is ready. You can start the game.'
 										: 'Everyone is ready. Waiting for the host to start…'
@@ -628,10 +675,11 @@ export default function LobbyScreen() {
 								<TouchableOpacity
 									style={[
 										styles.startButton,
-										starting && styles.buttonDisabled,
+										(starting || !hasEnoughPredictionsToStart) &&
+											styles.buttonDisabled,
 									]}
 									onPress={handleStartGame}
-									disabled={starting}
+									disabled={starting || !hasEnoughPredictionsToStart}
 								>
 									<Text style={styles.startButtonText}>
 										{starting ? 'Starting…' : 'Start game'}
@@ -654,7 +702,7 @@ export default function LobbyScreen() {
 				onClose={() => setShowSubjectPicker(false)}
 				players={otherPlayers}
 				globalCountBySubject={globalCountBySubject}
-				predictionsPerPlayer={PREDICTIONS_PER_PLAYER}
+				predictionsPerPlayer={REQUIRED_PREDICTIONS_PER_PLAYER}
 				onSelect={(id) => {
 					setSelectedSubjectId(id);
 					setShowSubjectPicker(false);
@@ -710,7 +758,6 @@ export default function LobbyScreen() {
 			<ActionModal
 				visible={!!actionPlayer}
 				title={actionPlayer?.nickname ?? 'Player options'}
-				subtitle="Choose an action."
 				onClose={() => setActionPlayer(null)}
 				actions={
 					actionPlayer

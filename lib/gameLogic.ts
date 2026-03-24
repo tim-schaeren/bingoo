@@ -8,6 +8,46 @@ export function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
+export const MIN_GRID_SIZE = 2;
+export const MAX_GRID_SIZE = 5;
+export const MIN_CARD_CELLS = MIN_GRID_SIZE * MIN_GRID_SIZE;
+export const REQUIRED_PREDICTIONS_PER_PLAYER = 2;
+
+export function getMinVisiblePredictions(
+  players: { id: string }[],
+  predictions: { subjectId: string }[],
+): number {
+  if (players.length === 0) return 0;
+
+  return players.reduce((min, player) => {
+    const count = predictions.filter((p) => p.subjectId !== player.id).length;
+    return Math.min(min, count);
+  }, Infinity);
+}
+
+export function getMinPredictionsPerPlayer(
+  players: { id: string }[],
+  predictions: { subjectId: string }[],
+): number {
+  if (players.length === 0) return 0;
+
+  return players.reduce((min, player) => {
+    const count = predictions.filter((p) => p.subjectId === player.id).length;
+    return Math.min(min, count);
+  }, Infinity);
+}
+
+export function canStartGameWithPredictions(
+  players: { id: string }[],
+  predictions: { subjectId: string }[],
+): boolean {
+  return (
+    getMinVisiblePredictions(players, predictions) >= MIN_CARD_CELLS &&
+    getMinPredictionsPerPlayer(players, predictions) >=
+      REQUIRED_PREDICTIONS_PER_PLAYER
+  );
+}
+
 // Compute grid size from the predictions each player will see.
 // Each player's card = all predictions where subjectId != their id.
 // With N players each writing 1 prediction per other player, every card
@@ -16,13 +56,10 @@ export function computeGridSize(
   players: { id: string }[],
   predictions: { subjectId: string }[]
 ): number {
-  if (players.length < 2) return 2;
-  const minVisible = players.reduce((min, player) => {
-    const count = predictions.filter(p => p.subjectId !== player.id).length;
-    return Math.min(min, count);
-  }, Infinity);
-  const n = Math.floor(Math.sqrt(minVisible === Infinity ? 0 : minVisible));
-  return Math.max(2, Math.min(5, n)); // clamp: 2×2 minimum, 5×5 maximum
+  if (players.length < 2) return MIN_GRID_SIZE;
+  const minVisible = getMinVisiblePredictions(players, predictions);
+  const n = Math.floor(Math.sqrt(minVisible));
+  return Math.max(MIN_GRID_SIZE, Math.min(MAX_GRID_SIZE, n)); // clamp: 2×2 minimum, 5×5 maximum
 }
 
 // Generate bingo cards for all players.

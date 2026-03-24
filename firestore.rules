@@ -122,7 +122,7 @@ service cloud.firestore {
           && isLobby(gameId)
           && request.resource.data.keys().hasAll(['authorId', 'subjectId', 'text', 'createdAt'])
           && request.resource.data.text.size() > 0
-          && request.resource.data.text.size() <= 120
+          && request.resource.data.text.size() <= 50
           && request.resource.data.authorId != request.resource.data.subjectId
           && playerExists(gameId, request.resource.data.subjectId);
 

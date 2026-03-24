@@ -13,6 +13,7 @@ import {
 	ActivityIndicator,
 	Linking,
 	Animated,
+	type LayoutChangeEvent,
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,6 +21,7 @@ import { getDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import Constants from 'expo-constants';
 import { colors, spacing, radius, fontSize } from '../constants/theme';
+import { BrandWordmark } from '../components/BrandWordmark';
 import {
 	createGame,
 	cancelGame,
@@ -49,6 +51,16 @@ interface SavedSessionSummary {
 	membership: SavedMembership;
 	game: Game;
 }
+
+type FormAnchor =
+	| 'createGameName'
+	| 'createNickname'
+	| 'createPolicies'
+	| 'createSubmit'
+	| 'joinNickname'
+	| 'joinCode'
+	| 'joinPolicies'
+	| 'joinSubmit';
 
 const RULES = [
 	{
@@ -92,6 +104,8 @@ export default function HomeScreen() {
 		SavedSessionSummary[]
 	>([]);
 	const [loadingSessions, setLoadingSessions] = useState(true);
+	const scrollRef = useRef<ScrollView>(null);
+	const formAnchorsRef = useRef<Partial<Record<FormAnchor, number>>>({});
 
 	const {
 		memberships,
@@ -103,6 +117,28 @@ export default function HomeScreen() {
 	} = useGameStore();
 
 	const iconAnim = useRef(new Animated.Value(1)).current;
+
+	const setFormAnchor =
+		(anchor: FormAnchor) => (event: LayoutChangeEvent) => {
+			formAnchorsRef.current[anchor] = event.nativeEvent.layout.y;
+		};
+
+	const scrollToAnchor = (anchor: FormAnchor, offset = 180) => {
+		requestAnimationFrame(() => {
+			setTimeout(() => {
+				const y = formAnchorsRef.current[anchor];
+				if (y == null) return;
+				scrollRef.current?.scrollTo({
+					y: Math.max(y - offset, 0),
+					animated: true,
+				});
+			}, 120);
+		});
+	};
+
+	useEffect(() => {
+		scrollRef.current?.scrollTo({ y: 0, animated: false });
+	}, [mode]);
 
 	useEffect(() => {
 		const timer = setTimeout(() => {
@@ -470,6 +506,7 @@ export default function HomeScreen() {
 				behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
 			>
 				<ScrollView
+					ref={scrollRef}
 					contentContainerStyle={
 						mode === 'home' ? styles.container : styles.containerForm
 					}
@@ -497,7 +534,7 @@ export default function HomeScreen() {
 										style={styles.logoImage}
 									/>
 								</Animated.View>
-								<Text style={styles.logo}>bingoo</Text>
+								<BrandWordmark style={styles.logo} />
 								<Text style={styles.tagline}>
 									your friends know you too well.
 								</Text>
@@ -587,7 +624,7 @@ export default function HomeScreen() {
 									style={styles.logoImage}
 								/>
 							</Animated.View>
-							<Text style={styles.logo}>bingoo</Text>
+							<BrandWordmark style={styles.logo} />
 							<Text style={styles.tagline}>
 								your friends know you too well.
 							</Text>
@@ -596,34 +633,49 @@ export default function HomeScreen() {
 
 					{mode === 'create' && (
 						<View style={styles.form}>
-							<Text style={styles.label}>Game name</Text>
-							<TextInput
-								style={styles.input}
-								placeholder="e.g. Paris Trip"
-								placeholderTextColor={colors.textLight}
-								value={gameName}
-								onChangeText={setGameName}
-								maxLength={32}
-								autoFocus
-							/>
+							<View onLayout={setFormAnchor('createGameName')}>
+								<Text style={styles.label}>Game name</Text>
+								<TextInput
+									style={styles.input}
+									placeholder="e.g. Paris Trip"
+									placeholderTextColor={colors.textLight}
+									value={gameName}
+									onChangeText={setGameName}
+									maxLength={32}
+									autoFocus
+									returnKeyType="next"
+									onFocus={() => scrollToAnchor('createGameName')}
+									onSubmitEditing={() => scrollToAnchor('createNickname')}
+								/>
+							</View>
 
-							<Text style={styles.label}>Your nickname</Text>
-							<TextInput
-								style={styles.input}
-								placeholder="e.g. Tom"
-								placeholderTextColor={colors.textLight}
-								value={nickname}
-								onChangeText={setNickname}
-								maxLength={20}
-							/>
+							<View onLayout={setFormAnchor('createNickname')}>
+								<Text style={styles.label}>Your nickname</Text>
+								<TextInput
+									style={styles.input}
+									placeholder="e.g. Tom"
+									placeholderTextColor={colors.textLight}
+									value={nickname}
+									onChangeText={setNickname}
+									maxLength={20}
+									returnKeyType="done"
+									onFocus={() => scrollToAnchor('createNickname')}
+								/>
+							</View>
 
-							<View style={styles.policyRow}>
+							<View
+								style={styles.policyRow}
+								onLayout={setFormAnchor('createPolicies')}
+							>
 								<TouchableOpacity
 									style={[
 										styles.checkbox,
 										acceptedPolicies && styles.checkboxChecked,
 									]}
-									onPress={() => setAcceptedPolicies((value) => !value)}
+									onPress={() => {
+										setAcceptedPolicies((value) => !value);
+										scrollToAnchor('createSubmit', 220);
+									}}
 								>
 									{acceptedPolicies && (
 										<Text style={styles.checkboxMark}>✓</Text>
@@ -648,15 +700,17 @@ export default function HomeScreen() {
 								</View>
 							</View>
 
-							<TouchableOpacity
-								style={[styles.primaryButton, loading && styles.buttonDisabled]}
-								onPress={handleCreate}
-								disabled={loading}
-							>
-								<Text style={styles.primaryButtonText}>
-									{loading ? 'creating…' : 'create'}
-								</Text>
-							</TouchableOpacity>
+							<View onLayout={setFormAnchor('createSubmit')}>
+								<TouchableOpacity
+									style={[styles.primaryButton, loading && styles.buttonDisabled]}
+									onPress={handleCreate}
+									disabled={loading}
+								>
+									<Text style={styles.primaryButtonText}>
+										{loading ? 'creating…' : 'create'}
+									</Text>
+								</TouchableOpacity>
+							</View>
 
 							<TouchableOpacity
 								style={styles.backButton}
@@ -669,35 +723,50 @@ export default function HomeScreen() {
 
 					{mode === 'join' && (
 						<View style={styles.form}>
-							<Text style={styles.label}>Your nickname</Text>
-							<TextInput
-								style={styles.input}
-								placeholder="e.g. Tom"
-								placeholderTextColor={colors.textLight}
-								value={nickname}
-								onChangeText={setNickname}
-								maxLength={20}
-								autoFocus
-							/>
+							<View onLayout={setFormAnchor('joinNickname')}>
+								<Text style={styles.label}>Your nickname</Text>
+								<TextInput
+									style={styles.input}
+									placeholder="e.g. Tom"
+									placeholderTextColor={colors.textLight}
+									value={nickname}
+									onChangeText={setNickname}
+									maxLength={20}
+									autoFocus
+									returnKeyType="next"
+									onFocus={() => scrollToAnchor('joinNickname')}
+									onSubmitEditing={() => scrollToAnchor('joinCode')}
+								/>
+							</View>
 
-							<Text style={styles.label}>Game code</Text>
-							<TextInput
-								style={[styles.input, styles.codeInput]}
-								placeholder="ABC123"
-								placeholderTextColor={colors.textLight}
-								value={joinCode}
-								onChangeText={(text) => setJoinCode(text.toUpperCase())}
-								maxLength={6}
-								autoCapitalize="characters"
-							/>
+							<View onLayout={setFormAnchor('joinCode')}>
+								<Text style={styles.label}>Game code</Text>
+								<TextInput
+									style={[styles.input, styles.codeInput]}
+									placeholder="ABC123"
+									placeholderTextColor={colors.textLight}
+									value={joinCode}
+									onChangeText={(text) => setJoinCode(text.toUpperCase())}
+									maxLength={6}
+									autoCapitalize="characters"
+									returnKeyType="done"
+									onFocus={() => scrollToAnchor('joinCode')}
+								/>
+							</View>
 
-							<View style={styles.policyRow}>
+							<View
+								style={styles.policyRow}
+								onLayout={setFormAnchor('joinPolicies')}
+							>
 								<TouchableOpacity
 									style={[
 										styles.checkbox,
 										acceptedPolicies && styles.checkboxChecked,
 									]}
-									onPress={() => setAcceptedPolicies((value) => !value)}
+									onPress={() => {
+										setAcceptedPolicies((value) => !value);
+										scrollToAnchor('joinSubmit', 220);
+									}}
 								>
 									{acceptedPolicies && (
 										<Text style={styles.checkboxMark}>✓</Text>
@@ -722,15 +791,17 @@ export default function HomeScreen() {
 								</View>
 							</View>
 
-							<TouchableOpacity
-								style={[styles.primaryButton, loading && styles.buttonDisabled]}
-								onPress={handleJoin}
-								disabled={loading}
-							>
-								<Text style={styles.primaryButtonText}>
-									{loading ? 'joining…' : 'join game'}
-								</Text>
-							</TouchableOpacity>
+							<View onLayout={setFormAnchor('joinSubmit')}>
+								<TouchableOpacity
+									style={[styles.primaryButton, loading && styles.buttonDisabled]}
+									onPress={handleJoin}
+									disabled={loading}
+								>
+									<Text style={styles.primaryButtonText}>
+										{loading ? 'joining…' : 'join game'}
+									</Text>
+								</TouchableOpacity>
+							</View>
 
 							<TouchableOpacity
 								style={styles.backButton}
@@ -1027,6 +1098,8 @@ const styles = StyleSheet.create({
 		padding: spacing.md,
 		fontSize: fontSize.md,
 		color: colors.text,
+		letterSpacing: 0,
+		textAlign: 'left',
 	},
 	codeInput: {
 		letterSpacing: 4,
@@ -1049,19 +1122,19 @@ const styles = StyleSheet.create({
 		fontWeight: '700',
 	},
 	secondaryButton: {
-		backgroundColor: colors.surface,
+		backgroundColor: colors.secondary,
 		borderRadius: radius.lg,
 		padding: spacing.md,
 		alignItems: 'center',
 		alignSelf: 'center',
 		minWidth: 200,
 		borderWidth: 1.5,
-		borderColor: colors.border,
+		borderColor: '#D7A300',
 	},
 	secondaryButtonText: {
 		color: colors.text,
 		fontSize: fontSize.md,
-		fontWeight: '600',
+		fontWeight: '700',
 	},
 	backButton: { alignItems: 'center', padding: spacing.sm },
 	backButtonText: { color: colors.textLight, fontSize: fontSize.md },

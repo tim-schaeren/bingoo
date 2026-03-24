@@ -14,6 +14,7 @@ import { colors, spacing, radius, fontSize } from '../../../constants/theme';
 import { listenToGame, listenToMarks, listenToPredictions, getCard } from '../../../lib/firestore';
 import { getWinningLine } from '../../../lib/gameLogic';
 import { useGameStore } from '../../../store/gameStore';
+import { BrandWordmark } from '../../../components/BrandWordmark';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const GRID_PADDING = spacing.lg * 2;
@@ -150,7 +151,7 @@ export default function WinnerScreen() {
                 ? `${winners[0].nickname} won!`
                 : winners.map(w => w.nickname).join(' & ') + ' tied!'}
           </Text>
-          <Text style={styles.bingoo}>BINGOO!</Text>
+          <BrandWordmark style={styles.bingoo} uppercase suffix="!" />
         </View>
 
         {/* Card(s) */}

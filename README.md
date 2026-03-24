@@ -104,7 +104,7 @@ games/{gameId}
   /predictions/{predictionId}
     authorId      string       — who wrote it
     subjectId     string       — who it's about
-    text          string       — max 120 chars
+    text          string       — max 50 chars
     createdAt     timestamp
     reactions     object?      — { "😂": [uid, ...], "🔥": [...], ... }
 

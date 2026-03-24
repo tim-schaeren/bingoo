@@ -32,6 +32,7 @@ import { useGameStore } from '../../../store/gameStore';
 import { sendPushNotifications } from '../../../lib/notifications';
 import { feedbackMark, feedbackWin, feedbackSelection } from '../../../lib/feedback';
 import { ReportModal } from '../../../components/ReportModal';
+import { BrandWordmark } from '../../../components/BrandWordmark';
 import { PlayerList } from '../../../components/lobby/PlayerList';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -277,7 +278,7 @@ export default function PlayScreen() {
 						<View style={styles.headerSpacer} />
 					)}
 					<View style={styles.headerCenter}>
-						<Text style={styles.title}>bingoo</Text>
+						<BrandWordmark style={styles.title} />
 						<Text style={styles.subtitle}>
 							{markedIds.size} / {myCard.length} marked
 						</Text>
@@ -523,7 +524,7 @@ const styles = StyleSheet.create({
 	},
 	headerCenter: { alignItems: 'center', gap: spacing.xs },
 	homeButton: {
-		minWidth: 76,
+		minWidth: 84,
 		backgroundColor: colors.surface,
 		borderRadius: radius.full,
 		paddingHorizontal: spacing.md,
@@ -536,7 +537,6 @@ const styles = StyleSheet.create({
 		fontSize: fontSize.sm,
 		color: colors.text,
 		fontWeight: '700',
-		textTransform: 'uppercase',
 	},
 	title: { fontSize: fontSize.xl, fontWeight: '900', color: colors.primary },
 	subtitle: { fontSize: fontSize.sm, color: colors.textLight },

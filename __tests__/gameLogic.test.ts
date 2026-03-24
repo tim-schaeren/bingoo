@@ -1,4 +1,14 @@
-import { computeGridSize, generateCards, getWinningLine, checkWin } from '../lib/gameLogic';
+import {
+  computeGridSize,
+  generateCards,
+  getWinningLine,
+  checkWin,
+  getMinVisiblePredictions,
+  getMinPredictionsPerPlayer,
+  canStartGameWithPredictions,
+  MIN_CARD_CELLS,
+  REQUIRED_PREDICTIONS_PER_PLAYER,
+} from '../lib/gameLogic';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -57,6 +67,54 @@ describe('computeGridSize', () => {
     }
     // Total = 24. Each player sees 24 - 6 = 18. sqrt(18) ≈ 4.24 → floor = 4
     expect(computeGridSize(players, predictions)).toBe(4);
+  });
+});
+
+describe('prediction capacity checks', () => {
+  it('blocks game start when any player would see fewer than 4 predictions', () => {
+    const players = makePlayers(['a', 'b', 'c']);
+    const predictions = makePredictions([
+      { id: 'p1', subjectId: 'a' },
+      { id: 'p2', subjectId: 'b' },
+      { id: 'p3', subjectId: 'c' },
+    ]);
+
+    expect(getMinVisiblePredictions(players, predictions)).toBe(2);
+    expect(canStartGameWithPredictions(players, predictions)).toBe(false);
+  });
+
+  it('blocks game start when a newly joined player has no predictions about them yet', () => {
+    const players = makePlayers(['a', 'b', 'c', 'd']);
+    const predictions = makePredictions([
+      { id: 'p1', subjectId: 'a' },
+      { id: 'p2', subjectId: 'a' },
+      { id: 'p3', subjectId: 'b' },
+      { id: 'p4', subjectId: 'b' },
+      { id: 'p5', subjectId: 'c' },
+      { id: 'p6', subjectId: 'c' },
+    ]);
+
+    expect(getMinVisiblePredictions(players, predictions)).toBe(4);
+    expect(getMinPredictionsPerPlayer(players, predictions)).toBe(0);
+    expect(canStartGameWithPredictions(players, predictions)).toBe(false);
+  });
+
+  it('allows game start once every player has at least 4 visible predictions', () => {
+    const players = makePlayers(['a', 'b', 'c']);
+    const predictions = makePredictions([
+      { id: 'p1', subjectId: 'a' },
+      { id: 'p2', subjectId: 'a' },
+      { id: 'p3', subjectId: 'b' },
+      { id: 'p4', subjectId: 'b' },
+      { id: 'p5', subjectId: 'c' },
+      { id: 'p6', subjectId: 'c' },
+    ]);
+
+    expect(getMinVisiblePredictions(players, predictions)).toBe(MIN_CARD_CELLS);
+    expect(getMinPredictionsPerPlayer(players, predictions)).toBe(
+      REQUIRED_PREDICTIONS_PER_PLAYER,
+    );
+    expect(canStartGameWithPredictions(players, predictions)).toBe(true);
   });
 });
 

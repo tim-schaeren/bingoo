@@ -16,7 +16,14 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { generateGameCode, generateId, generateCards, computeGridSize } from './gameLogic';
+import {
+  generateGameCode,
+  generateId,
+  generateCards,
+  computeGridSize,
+  canStartGameWithPredictions,
+  MIN_CARD_CELLS,
+} from './gameLogic';
 import { currentUid } from './auth';
 
 export type GameStatus = 'lobby' | 'active' | 'finished' | 'cancelled';
@@ -75,6 +82,7 @@ export const REPORT_REASONS = [
 export type ReportReason = (typeof REPORT_REASONS)[number];
 export type ReportTargetType = 'prediction' | 'player';
 export const MAX_PLAYERS_PER_LOBBY = 9;
+export const MAX_PREDICTION_LENGTH = 50;
 
 export class GameBannedError extends Error {
   constructor() {
@@ -90,12 +98,27 @@ export class GameFullError extends Error {
   }
 }
 
+export class InsufficientPredictionsError extends Error {
+  constructor() {
+    super(
+      `At least ${MIN_CARD_CELLS} visible predictions per player are required to start the game.`,
+    );
+    this.name = 'InsufficientPredictionsError';
+  }
+}
+
 export function isGameBannedError(error: unknown): error is GameBannedError {
   return error instanceof GameBannedError;
 }
 
 export function isGameFullError(error: unknown): error is GameFullError {
   return error instanceof GameFullError;
+}
+
+export function isInsufficientPredictionsError(
+  error: unknown,
+): error is InsufficientPredictionsError {
+  return error instanceof InsufficientPredictionsError;
 }
 
 // ─── Create ───────────────────────────────────────────────────────────────────
@@ -222,8 +245,16 @@ export async function startGame(
   players: Player[],
   predictions: Prediction[]
 ): Promise<void> {
+  if (!canStartGameWithPredictions(players, predictions)) {
+    throw new InsufficientPredictionsError();
+  }
+
   const gridSize = computeGridSize(players, predictions);
   const cards = generateCards(players, predictions, gridSize);
+  const totalCells = gridSize * gridSize;
+  if (Object.values(cards).some((grid) => grid.length < totalCells)) {
+    throw new InsufficientPredictionsError();
+  }
   const cardWrites = Object.entries(cards).map(([playerId, grid]) =>
     setDoc(doc(db, 'games', gameId, 'cards', playerId), { grid })
   );

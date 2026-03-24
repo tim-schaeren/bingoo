@@ -8,6 +8,7 @@ interface Props {
   playerId: string;
   submitted: boolean;
   getPlayerName: (pid: string | undefined) => string;
+  onDelete: (predictionId: string) => void;
   onReact: (prediction: Prediction, emoji: ReactionEmoji) => void;
   reactionPickerOpen: boolean;
   onTogglePicker: () => void;
@@ -19,6 +20,7 @@ export function PredictionCard({
   playerId,
   submitted,
   getPlayerName,
+  onDelete,
   onReact,
   reactionPickerOpen,
   onTogglePicker,
@@ -45,6 +47,15 @@ export function PredictionCard({
     >
       <View style={styles.header}>
         <Text style={styles.about}>{getPlayerName(prediction.subjectId)}</Text>
+        {prediction.authorId === playerId && !submitted && (
+          <TouchableOpacity
+            onPress={() => onDelete(prediction.id)}
+            hitSlop={8}
+            style={styles.deleteButton}
+          >
+            <Text style={styles.delete}>✕</Text>
+          </TouchableOpacity>
+        )}
       </View>
       <Text style={styles.text}>{prediction.text}</Text>
       <Text style={styles.author}>
@@ -74,8 +85,17 @@ export function PredictionCard({
       {reactionPickerOpen && (
         <View style={styles.reactionPicker}>
           {REACTION_EMOJIS.map((emoji) => (
-            <TouchableOpacity key={emoji} onPress={() => onReact(prediction, emoji)}>
-              <Text style={[styles.reactionOption, myReaction === emoji && styles.reactionOptionActive]}>
+            <TouchableOpacity
+              key={emoji}
+              style={styles.reactionOptionButton}
+              onPress={() => onReact(prediction, emoji)}
+            >
+              <Text
+                style={[
+                  styles.reactionOption,
+                  myReaction === emoji && styles.reactionOptionActive,
+                ]}
+              >
                 {emoji}
               </Text>
             </TouchableOpacity>
@@ -99,6 +119,13 @@ const styles = StyleSheet.create({
   },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   about: { fontSize: fontSize.sm, color: colors.primary, fontWeight: '700' },
+  deleteButton: {
+    minWidth: 24,
+    minHeight: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  delete: { color: colors.textLight, fontSize: fontSize.md, paddingLeft: spacing.sm },
   text: { fontSize: fontSize.md, color: colors.text },
   author: { fontSize: fontSize.sm, color: colors.textLight, marginTop: 2 },
 
@@ -132,14 +159,23 @@ const styles = StyleSheet.create({
   reactionAddText: { fontSize: fontSize.sm, color: colors.textLight },
   reactionPicker: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'space-between',
     backgroundColor: colors.surface,
     borderRadius: radius.md,
-    paddingVertical: spacing.xs,
+    padding: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
     marginTop: spacing.xs,
+    gap: spacing.sm,
   },
-  reactionOption: { fontSize: 20 },
+  reactionOptionButton: {
+    minWidth: 40,
+    minHeight: 40,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.background,
+  },
+  reactionOption: { fontSize: 24 },
   reactionOptionActive: { opacity: 0.4 },
 });
