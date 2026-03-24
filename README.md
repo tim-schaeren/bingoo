@@ -1,12 +1,12 @@
 # bingoo
 
-A social prediction bingo game for iOS and Android. Players write predictions about each other, receive a bingo card filled with those predictions, and mark them off in real time as they come true. First to complete a row, column, or diagonal wins.
+A social prediction bingo game for iOS and Android. Players create named private lobbies, write predictions about each other, receive a bingo card filled with those predictions, and mark them off in real time as they come true. First to complete a row, column, or diagonal wins.
 
 ---
 
 ## How it works
 
-1. **Create** a game and share the 6-character code with friends.
+1. **Create** a named game and share the 6-character code with friends.
 2. **Everyone joins** the lobby and writes predictions about the other players (e.g. _"Tom will show up late"_). Predictions go into a shared pool — you never see predictions written about yourself.
 3. The **host starts** the game. Each player receives a unique, shuffled bingo card filled with predictions they can see.
 4. During the game, anyone can **mark a prediction as true** by tapping a cell and pressing "Mark as true". Marks are visible to everyone in real time (except for ones on predictions about themselves).
@@ -21,7 +21,7 @@ A social prediction bingo game for iOS and Android. Players write predictions ab
 | Framework      | React Native + Expo SDK 54                                 |
 | Navigation     | Expo Router (file-based)                                   |
 | Backend        | Firebase Firestore (real-time) + Firebase Auth (anonymous) |
-| State          | Zustand + AsyncStorage (session persistence)               |
+| State          | Zustand + AsyncStorage (up to 3 saved memberships)         |
 | Notifications  | Expo Push Notifications                                    |
 | Build / Deploy | EAS Build (local) + EAS Submit → TestFlight / Play Internal |
 
@@ -33,7 +33,7 @@ A social prediction bingo game for iOS and Android. Players write predictions ab
 bingoo/
 ├── app/                        # Expo Router screens
 │   ├── _layout.tsx             # Root layout: auth init, hydration, push tokens, offline banner
-│   ├── index.tsx               # Home screen (create / join / resume)
+│   ├── index.tsx               # Home screen (create / join / multi-game resume)
 │   ├── join/
 │   │   └── [code].tsx          # Deep-link handler (bingoo://join/XXXXXX)
 │   └── game/
@@ -63,7 +63,7 @@ bingoo/
 │   └── feedback.ts             # Haptic + audio feedback helpers
 │
 ├── store/
-│   └── gameStore.ts            # Zustand store: session fields persisted, live data transient
+│   └── gameStore.ts            # Zustand store: saved memberships persisted, live game data transient
 │
 ├── constants/
 │   └── theme.ts                # Colors, spacing, radius, font sizes
@@ -87,6 +87,7 @@ bingoo/
 ```
 games/{gameId}
   code            string       — 6-char invite code (e.g. "AB3K7Z")
+  name            string       — host-defined lobby name (e.g. "Paris Trip")
   status          string       — "lobby" | "active" | "finished" | "cancelled"
   hostId          string       — Firebase Auth UID of the host
   hostNickname    string
@@ -144,7 +145,7 @@ games/{gameId}
 
 ## Security rules (`firestore.rules`)
 
-- **Games**: lobby games are queryable for joining by code; active/finished games are readable only by members. Only the host can start or cancel a lobby game. Members can append themselves to `winners` when the game is active/finished.
+- **Games**: lobby games are queryable for joining by code; active/finished games are readable only by members. New games must include a non-empty `name`. Only the host can start or cancel a lobby game. Members can append themselves to `winners` when the game is active/finished.
 - **Players**: readable only by members of the same game. Joining is allowed only in lobby and blocked if the player appears in `bannedPlayers`. Players can leave a lobby themselves; hosts can remove other players from a lobby or active game.
 - **Predictions**: readable only by members. Authors can create in lobby only, and any member can add/remove reactions during lobby. Authors, subjects, or the host can delete a prediction in lobby.
 - **Cards**: readable only by members; writable only by the host during lobby before the game starts.
@@ -202,6 +203,8 @@ Scan the QR code with [Expo Go](https://expo.dev/go) (iOS or Android).
 > **Note:** Push notification behavior should be tested in a development build or production build, not relied on in Expo Go.
 
 > **Note:** The Metro config sets `unstable_enablePackageExports = false` — this is required for Firebase to bundle correctly with React Native.
+
+> **Note:** The app now persists up to 3 joined games locally. Finished and cancelled games are automatically pruned from the saved list on startup.
 
 ### 5. Run tests
 
