@@ -62,6 +62,7 @@ export function PredictionCard({
         {prediction.authorId === playerId ? 'by you' : `by ${getPlayerName(prediction.authorId)}`}
       </Text>
 
+      {/* Reaction area — always absolute so it never affects card height */}
       {reactionPickerOpen ? (
         <View style={styles.reactionPicker}>
           {REACTION_EMOJIS.map((emoji) => (
@@ -81,14 +82,15 @@ export function PredictionCard({
         <View style={styles.reactionRow}>
           {allReactions.map(({ emoji, count }) => {
             const isMine = myReaction === emoji;
-            return isMine ? (
-              <TouchableOpacity key={emoji} style={styles.reactionAddButton} onPress={onTogglePicker}>
-                <Text style={styles.reactionAddText}>{emoji} {count}</Text>
-              </TouchableOpacity>
-            ) : (
-              <View key={emoji} style={styles.reactionPill}>
+            return (
+              <TouchableOpacity
+                key={emoji}
+                style={[styles.reactionPill, isMine && styles.reactionPillMine]}
+                onPress={isMine ? () => onReact(prediction, emoji) : undefined}
+                disabled={!isMine}
+              >
                 <Text style={styles.reactionPillText}>{emoji} {count}</Text>
-              </View>
+              </TouchableOpacity>
             );
           })}
           {!myReaction && (
@@ -107,7 +109,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: radius.md,
     padding: spacing.md,
-    paddingBottom: spacing.md + 20,
+    paddingBottom: spacing.md + 28,
     borderWidth: 1,
     borderColor: colors.border,
     gap: 2,
@@ -125,9 +127,12 @@ const styles = StyleSheet.create({
   text: { fontSize: fontSize.md, color: colors.text },
   author: { fontSize: fontSize.sm, color: colors.textLight, marginTop: 2 },
 
+  // Both reactionRow and reactionPicker are absolutely positioned at the
+  // same spot so swapping between them never changes the card's height.
   reactionRow: {
     position: 'absolute',
     bottom: spacing.sm,
+    left: spacing.sm,
     right: spacing.sm,
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -136,12 +141,16 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   reactionPill: {
-    backgroundColor: colors.surface,
     borderRadius: radius.full,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
     borderWidth: 1,
     borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  reactionPillMine: {
+    backgroundColor: colors.primaryLight,
+    borderColor: colors.primary,
   },
   reactionPillText: { fontSize: fontSize.sm },
   reactionAddButton: {
@@ -153,13 +162,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   reactionAddText: { fontSize: fontSize.sm, color: colors.textLight },
+
   reactionPicker: {
+    position: 'absolute',
+    bottom: spacing.sm,
+    left: spacing.sm,
+    right: spacing.sm,
     flexDirection: 'row',
     backgroundColor: colors.background,
     borderRadius: radius.full,
     borderWidth: 1,
     borderColor: colors.border,
-    marginTop: spacing.xs,
     overflow: 'hidden',
   },
   reactionOptionButton: {
@@ -168,8 +181,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-reactionOptionActive: {
-    backgroundColor: colors.surface,
+  reactionOptionActive: {
+    backgroundColor: colors.primaryLight,
   },
   reactionOption: { fontSize: 18 },
 });

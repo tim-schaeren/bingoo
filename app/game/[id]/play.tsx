@@ -1,4 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
+
+// react-native-share is not bundled in Expo Go — lazy require so it degrades gracefully
+let RNShare: typeof import('react-native-share').default | null = null;
+try { RNShare = require('react-native-share').default; } catch {}
 import {
 	View,
 	Text,
@@ -59,6 +65,7 @@ export default function PlayScreen() {
 	const players = useGameStore((s) => s.players);
 	const myCard = useGameStore((s) => s.myCard);
 
+	const gridRef = useRef<View>(null);
 	const [winningLine, setWinningLine] = useState<number[] | null>(null);
 	const [loadingCard, setLoadingCard] = useState(true);
 	const [allCards, setAllCards] = useState<Map<string, string[]>>(new Map());
@@ -190,6 +197,21 @@ export default function PlayScreen() {
 		return pred?.subjectId !== playerId;
 	});
 
+	const handleShare = async () => {
+		if (!gridRef.current) return;
+		try {
+			if (RNShare) {
+				const base64 = await captureRef(gridRef, { format: 'jpg', quality: 0.9, result: 'base64' });
+				await RNShare.open({ url: `data:image/jpeg;base64,${base64}`, type: 'image/jpeg' });
+			} else {
+				const uri = await captureRef(gridRef, { format: 'jpg', quality: 0.9 });
+				await Sharing.shareAsync(uri, { mimeType: 'image/jpeg', UTI: 'public.jpeg' });
+			}
+		} catch {
+			// user dismissed share sheet — not an error
+		}
+	};
+
 	const doMarkPrediction = (predictionId: string) => {
 		if (!gameId || !playerId || !nickname) return;
 		feedbackMark();
@@ -289,7 +311,7 @@ export default function PlayScreen() {
 				</View>
 
 				{/* Bingo grid */}
-				<View style={styles.grid}>
+				<View style={[styles.grid, { backgroundColor: colors.background }]} ref={gridRef} collapsable={false}>
 					{myCard.map((predictionId, index) => {
 						const isMarked = markedIds.has(predictionId);
 						const isWinCell = winningLine?.includes(index) ?? false;
@@ -307,7 +329,7 @@ export default function PlayScreen() {
 								activeOpacity={0.7}
 							>
 								<Text
-									style={[styles.cellText, isMarked && styles.cellTextMarked]}
+									style={[styles.cellText, isMarked && styles.cellTextMarked, isWinCell && styles.cellTextWin]}
 									numberOfLines={5}
 									adjustsFontSizeToFit
 									minimumFontScale={0.5}
@@ -323,6 +345,10 @@ export default function PlayScreen() {
 						);
 					})}
 				</View>
+
+				<TouchableOpacity style={styles.shareButton} onPress={handleShare}>
+					<Text style={styles.shareButtonText}>share card</Text>
+				</TouchableOpacity>
 
 				{/* Mark log */}
 				{visibleMarks.length > 0 && (
@@ -370,26 +396,12 @@ export default function PlayScreen() {
 						{selectedPred && (
 							<>
 								<Text style={styles.modalPredText}>{selectedPred.text}</Text>
-								<View style={styles.modalMeta}>
-									<Text style={styles.modalMetaText}>
-										About {getPlayerName(selectedPred.subjectId)}
-									</Text>
-									<Text style={styles.modalMetaText}>
-										Written by {getPlayerName(selectedPred.authorId)}
-									</Text>
-								</View>
-								{selectedIsMarked ? (
-									<View style={styles.markedBadge}>
-										<Text style={styles.markedBadgeText}>
-											✓ Marked by {getMarkedByNickname(selectedPredId!)}
-										</Text>
-									</View>
-								) : (
+								{!selectedIsMarked && (
 									<TouchableOpacity
 										style={styles.markButton}
 										onPress={() => doMarkPrediction(selectedPredId!)}
 									>
-										<Text style={styles.markButtonText}>Mark as true</Text>
+										<Text style={styles.markButtonText}>mark as true</Text>
 									</TouchableOpacity>
 								)}
 								<TouchableOpacity
@@ -400,13 +412,13 @@ export default function PlayScreen() {
 										setShowReportModal(true);
 									}}
 								>
-									<Text style={styles.reportButtonText}>Report</Text>
+									<Text style={styles.reportButtonText}>report</Text>
 								</TouchableOpacity>
 								<TouchableOpacity
 									style={styles.closeButton}
 									onPress={() => setSelectedPredId(null)}
 								>
-									<Text style={styles.closeButtonText}>Close</Text>
+									<Text style={styles.closeButtonText}>close</Text>
 								</TouchableOpacity>
 							</>
 						)}
@@ -567,13 +579,13 @@ const styles = StyleSheet.create({
 		borderColor: colors.secondary,
 	},
 	cellText: {
-		fontSize: 14,
+		fontSize: 17,
 		fontWeight: '700',
 		color: colors.text,
 		textAlign: 'center',
-		lineHeight: 18,
 	},
 	cellTextMarked: { color: colors.markedText, fontWeight: '600' },
+	cellTextWin: { color: colors.text, fontWeight: '700' },
 	markedBy: {
 		fontSize: 9,
 		color: 'rgba(255,255,255,0.7)',
@@ -679,4 +691,14 @@ const styles = StyleSheet.create({
 		fontSize: fontSize.sm,
 		color: colors.textLight,
 	},
+
+	shareButton: {
+		borderRadius: radius.lg,
+		paddingHorizontal: spacing.xl,
+		paddingVertical: spacing.sm,
+		alignItems: 'center',
+		borderWidth: 1.5,
+		borderColor: colors.border,
+	},
+	shareButtonText: { color: colors.text, fontSize: fontSize.sm, fontWeight: '700' },
 });

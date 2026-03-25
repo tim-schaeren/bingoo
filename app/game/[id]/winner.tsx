@@ -7,13 +7,20 @@ import {
 	Dimensions,
 	ScrollView,
 	ActivityIndicator,
+	Alert,
 } from 'react-native';
+import { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
+
+let RNShare: typeof import('react-native-share').default | null = null;
+try { RNShare = require('react-native-share').default; } catch {}
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, radius, fontSize } from '../../../constants/theme';
 import {
 	listenToGame,
 	listenToMarks,
+	listenToPlayers,
 	listenToPredictions,
 	getCard,
 } from '../../../lib/firestore';
@@ -39,17 +46,22 @@ export default function WinnerScreen() {
 	const setGame = useGameStore((s) => s.setGame);
 	const setMarks = useGameStore((s) => s.setMarks);
 	const setPredictions = useGameStore((s) => s.setPredictions);
+	const setPlayers = useGameStore((s) => s.setPlayers);
 	const removeMembership = useGameStore((s) => s.removeMembership);
 	const setCurrentGame = useGameStore((s) => s.setCurrentGame);
 
 	const game = useGameStore((s) => s.game);
 	const marks = useGameStore((s) => s.marks);
 	const predictions = useGameStore((s) => s.predictions);
+	const players = useGameStore((s) => s.players);
 
 	const [winnerCards, setWinnerCards] = useState<WinnerCard[]>([]);
 	const [loadingCards, setLoadingCards] = useState(true);
 	const [carouselIndex, setCarouselIndex] = useState(0);
+	const [showOwnCard, setShowOwnCard] = useState(false);
+	const [ownCard, setOwnCard] = useState<string[] | null>(null);
 	const carouselRef = useRef<ScrollView>(null);
+	const cardRef = useRef<View>(null);
 
 	useEffect(() => {
 		if (!gameId) return;
@@ -57,10 +69,11 @@ export default function WinnerScreen() {
 		const unsubs = [
 			listenToGame(gameId, setGame),
 			listenToMarks(gameId, setMarks),
+			listenToPlayers(gameId, setPlayers),
 			listenToPredictions(gameId, setPredictions),
 		];
 		return () => unsubs.forEach((u) => u());
-	}, [gameId, setCurrentGame, setGame, setMarks, setPredictions]);
+	}, [gameId, setCurrentGame, setGame, setMarks, setPlayers, setPredictions]);
 
 	const winners = game?.winners ?? [];
 	const isMe = winners.some((w) => w.id === playerId);
@@ -85,12 +98,46 @@ export default function WinnerScreen() {
 		});
 	}, [gameId, winners.length]);
 
+	useEffect(() => {
+		if (!gameId || !playerId) return;
+		getCard(gameId, playerId).then((grid) => {
+			if (grid) setOwnCard(grid);
+		});
+	}, [gameId, playerId]);
+
+	const handleShare = async () => {
+		if (!cardRef.current) return;
+		try {
+			if (RNShare) {
+				const base64 = await captureRef(cardRef, { format: 'jpg', quality: 0.9, result: 'base64' });
+				await RNShare.open({ url: `data:image/jpeg;base64,${base64}`, type: 'image/jpeg' });
+			} else {
+				const uri = await captureRef(cardRef, { format: 'jpg', quality: 0.9 });
+				await Sharing.shareAsync(uri, { mimeType: 'image/jpeg', UTI: 'public.jpeg' });
+			}
+		} catch (e) {
+			Alert.alert('Error', String(e));
+		}
+	};
+
 	const markedIds = new Set(marks.map((m) => m.predictionId));
 	const gridSize = game?.gridSize ?? 4;
 	const cellSize = (SCREEN_WIDTH - GRID_PADDING) / gridSize - spacing.xs;
 
-	const getPredictionText = (predictionId: string) =>
-		predictions.find((p) => p.id === predictionId)?.text ?? '…';
+	const getPlayerName = (pid: string | undefined) =>
+		players.find((p) => p.id === pid)?.nickname ?? '…';
+
+	const getPredictionText = (predictionId: string) => {
+		const pred = predictions.find((p) => p.id === predictionId);
+		if (!pred) return '…';
+		return `${getPlayerName(pred.subjectId)} ${pred.text}`;
+	};
+
+	const showToggle = !(isMe && winners.length === 1);
+	const ownWinnerCard: WinnerCard | null =
+		ownCard && playerId
+			? { id: playerId, nickname: 'you', grid: ownCard }
+			: null;
 
 	const handlePlayAgain = () => {
 		if (gameId) removeMembership(gameId);
@@ -105,7 +152,7 @@ export default function WinnerScreen() {
 		);
 	}
 
-	const renderCard = (wc: WinnerCard, index: number) => {
+	const renderCard = (wc: WinnerCard) => {
 		const winLine = getWinningLine(wc.grid, markedIds, gridSize);
 		const isMyCard = wc.id === playerId;
 		const label = isMyCard
@@ -133,7 +180,7 @@ export default function WinnerScreen() {
 								]}
 							>
 								<Text
-									style={[styles.cellText, isMarked && styles.cellTextMarked]}
+									style={[styles.cellText, isMarked && styles.cellTextMarked, isWinCell && styles.cellTextWin]}
 									numberOfLines={4}
 									adjustsFontSizeToFit
 									minimumFontScale={0.6}
@@ -166,41 +213,73 @@ export default function WinnerScreen() {
 								? `${winners[0].nickname} won!`
 								: winners.map((w) => w.nickname).join(' & ') + ' tied!'}
 					</Text>
-					<BrandWordmark style={styles.bingoo} uppercase suffix="!" />
+					<BrandWordmark style={styles.bingoo} suffix="!" />
 				</View>
 
 				{/* Card(s) */}
-				{winnerCards.length === 1 ? (
-					<View style={styles.cardSection}>
-						{renderCard(winnerCards[0], 0)}
-					</View>
-				) : winnerCards.length > 1 ? (
-					<View style={styles.cardSection}>
-						<ScrollView
-							ref={carouselRef}
-							horizontal
-							pagingEnabled
-							showsHorizontalScrollIndicator={false}
-							onMomentumScrollEnd={(e) => {
-								const page = Math.round(
-									e.nativeEvent.contentOffset.x /
-										(SCREEN_WIDTH - spacing.lg * 2),
-								);
-								setCarouselIndex(page);
-							}}
-						>
-							{winnerCards.map((wc, i) => renderCard(wc, i))}
-						</ScrollView>
-						<View style={styles.dots}>
-							{winnerCards.map((_, i) => (
-								<View
-									key={i}
-									style={[styles.dot, i === carouselIndex && styles.dotActive]}
-								/>
-							))}
+				<View ref={cardRef} collapsable={false} style={{ backgroundColor: colors.background }}>
+					{showOwnCard && ownWinnerCard ? (
+						<View style={styles.cardSection}>
+							{renderCard(ownWinnerCard)}
 						</View>
+					) : winnerCards.length === 1 ? (
+						<View style={styles.cardSection}>
+							{renderCard(winnerCards[0])}
+						</View>
+					) : winnerCards.length > 1 ? (
+						<View style={styles.cardSection}>
+							<ScrollView
+								ref={carouselRef}
+								horizontal
+								pagingEnabled
+								showsHorizontalScrollIndicator={false}
+								onMomentumScrollEnd={(e) => {
+									const page = Math.round(
+										e.nativeEvent.contentOffset.x /
+											(SCREEN_WIDTH - spacing.lg * 2),
+									);
+									setCarouselIndex(page);
+								}}
+							>
+								{winnerCards.map((wc) => renderCard(wc))}
+							</ScrollView>
+							<View style={styles.dots}>
+								{winnerCards.map((_, i) => (
+									<View
+										key={i}
+										style={[styles.dot, i === carouselIndex && styles.dotActive]}
+									/>
+								))}
+							</View>
+						</View>
+					) : null}
+				</View>
+
+				{/* Toggle: winner's card / your card */}
+				{showToggle && ownWinnerCard && (
+					<View style={styles.toggleRow}>
+						<TouchableOpacity
+							style={[styles.toggleBtn, !showOwnCard && styles.toggleBtnActive]}
+							onPress={() => setShowOwnCard(false)}
+						>
+							<Text style={[styles.toggleBtnText, !showOwnCard && styles.toggleBtnTextActive]}>
+								winner's card
+							</Text>
+						</TouchableOpacity>
+						<TouchableOpacity
+							style={[styles.toggleBtn, showOwnCard && styles.toggleBtnActive]}
+							onPress={() => setShowOwnCard(true)}
+						>
+							<Text style={[styles.toggleBtnText, showOwnCard && styles.toggleBtnTextActive]}>
+								your card
+							</Text>
+						</TouchableOpacity>
 					</View>
-				) : null}
+				)}
+
+				<TouchableOpacity style={styles.shareButton} onPress={handleShare}>
+					<Text style={styles.shareButtonText}>share card</Text>
+				</TouchableOpacity>
 
 				<TouchableOpacity style={styles.button} onPress={handlePlayAgain}>
 					<Text style={styles.buttonText}>back to home</Text>
@@ -263,16 +342,51 @@ const styles = StyleSheet.create({
 		borderColor: colors.secondary,
 	},
 	cellText: {
-		fontSize: 11,
+		fontSize: 17,
+		fontWeight: '700',
 		color: colors.text,
 		textAlign: 'center',
-		lineHeight: 14,
 	},
-	cellTextMarked: { color: colors.markedText, fontWeight: '600' },
+	cellTextMarked: { color: colors.markedText, fontWeight: '700' },
+	cellTextWin: { color: colors.text, fontWeight: '700' },
 
 	dots: { flexDirection: 'row', gap: spacing.xs, justifyContent: 'center' },
 	dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.border },
 	dotActive: { backgroundColor: colors.primary },
+
+	toggleRow: {
+		flexDirection: 'row',
+		gap: spacing.sm,
+	},
+	toggleBtn: {
+		flex: 1,
+		borderRadius: radius.full,
+		paddingVertical: spacing.sm,
+		paddingHorizontal: spacing.md,
+		borderWidth: 1.5,
+		borderColor: colors.border,
+		alignItems: 'center',
+	},
+	toggleBtnActive: {
+		borderColor: colors.primary,
+		backgroundColor: colors.primaryLight,
+	},
+	toggleBtnText: {
+		fontSize: fontSize.sm,
+		fontWeight: '700',
+		color: colors.textLight,
+	},
+	toggleBtnTextActive: { color: colors.primary },
+
+	shareButton: {
+		borderRadius: radius.lg,
+		paddingHorizontal: spacing.xl,
+		paddingVertical: spacing.md,
+		alignItems: 'center',
+		borderWidth: 1.5,
+		borderColor: colors.border,
+	},
+	shareButtonText: { color: colors.text, fontSize: fontSize.md, fontWeight: '700' },
 
 	button: {
 		backgroundColor: colors.primary,

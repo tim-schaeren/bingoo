@@ -576,41 +576,6 @@ export default function LobbyScreen() {
 						</Text>
 					) : !submitted ? (
 						<View style={styles.section}>
-							{/* Per-subject progress */}
-							<View style={styles.progressRow}>
-								{otherPlayers.map((p) => {
-									const count = globalCountBySubject.get(p.id) ?? 0;
-									const full = count >= REQUIRED_PREDICTIONS_PER_PLAYER;
-									return (
-										<View
-											key={p.id}
-											style={[
-												styles.progressItem,
-												full && styles.progressItemDone,
-											]}
-										>
-											<Text
-												style={[
-													styles.progressName,
-													full && styles.progressNameDone,
-												]}
-												numberOfLines={1}
-											>
-												{p.nickname}
-											</Text>
-											<Text
-												style={[
-													styles.progressCount,
-													full && styles.progressCountDone,
-												]}
-											>
-												{`${count}/${REQUIRED_PREDICTIONS_PER_PLAYER}`}
-											</Text>
-										</View>
-									);
-								})}
-							</View>
-
 							{/* Bubble input row */}
 							<View style={styles.inputRow}>
 								<View style={styles.bubbleInputWrap}>
@@ -848,31 +813,6 @@ const styles = StyleSheet.create({
 
 	section: { gap: spacing.sm },
 
-	progressRow: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' },
-	progressItem: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		gap: spacing.xs,
-		backgroundColor: colors.surface,
-		borderRadius: radius.full,
-		paddingHorizontal: spacing.md,
-		paddingVertical: spacing.xs,
-		borderWidth: 1.5,
-		borderColor: colors.border,
-	},
-	progressItemDone: {
-		backgroundColor: colors.primaryLight,
-		borderColor: colors.primaryLight,
-	},
-	progressName: {
-		fontSize: fontSize.sm,
-		fontWeight: '600',
-		color: colors.textLight,
-		maxWidth: 80,
-	},
-	progressNameDone: { color: colors.primary },
-	progressCount: { fontSize: fontSize.sm, color: colors.textLight },
-	progressCountDone: { color: colors.primary, fontWeight: '700' },
 
 	inputRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'center' },
 	bubbleInputWrap: {
