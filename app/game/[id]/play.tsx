@@ -14,6 +14,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { colors, spacing, radius, fontSize } from '../../../constants/theme';
 import {
 	listenToGame,
@@ -41,11 +42,6 @@ import { ReportModal } from '../../../components/ReportModal';
 import { BrandWordmark } from '../../../components/BrandWordmark';
 import { PlayerList } from '../../../components/lobby/PlayerList';
 
-// react-native-share is not bundled in Expo Go — lazy require so it degrades gracefully
-let RNShare: typeof import('react-native-share').default | null = null;
-try {
-	RNShare = require('react-native-share').default;
-} catch {}
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const GRID_PADDING = spacing.lg * 2;
@@ -224,23 +220,16 @@ export default function PlayScreen() {
 	const handleShare = async () => {
 		if (!gridRef.current) return;
 		try {
-			if (RNShare) {
-				const base64 = await captureRef(gridRef, {
-					format: 'jpg',
-					quality: 0.9,
-					result: 'base64',
-				});
-				await RNShare.open({
-					url: `data:image/jpeg;base64,${base64}`,
-					type: 'image/jpeg',
-				});
-			} else {
-				const uri = await captureRef(gridRef, { format: 'jpg', quality: 0.9 });
-				await Sharing.shareAsync(uri, {
-					mimeType: 'image/jpeg',
-					UTI: 'public.jpeg',
-				});
-			}
+			const captured = await captureRef(gridRef, { format: 'jpg', quality: 0.9 });
+			const reencoded = await ImageManipulator.manipulateAsync(
+				captured,
+				[],
+				{ compress: 0.9, format: ImageManipulator.SaveFormat.JPEG },
+			);
+			await Sharing.shareAsync(reencoded.uri, {
+				mimeType: 'image/jpeg',
+				UTI: 'public.jpeg',
+			});
 		} catch {
 			// user dismissed share sheet — not an error
 		}

@@ -44,7 +44,6 @@ export default {
       'expo-router',
       ['expo-notifications', { icon: './assets/icon.png', color: '#6C3CE2' }],
       ['expo-av', { microphonePermission: false }],
-      ['expo-build-properties', { ios: { newArchEnabled: false }, android: { newArchEnabled: false } }],
     ],
     extra: {
       // These values are bundled into the app binary and are visible to anyone
