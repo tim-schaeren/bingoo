@@ -1,12 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { captureRef } from 'react-native-view-shot';
-import * as Sharing from 'expo-sharing';
-
-// react-native-share is not bundled in Expo Go — lazy require so it degrades gracefully
-let RNShare: typeof import('react-native-share').default | null = null;
-try {
-	RNShare = require('react-native-share').default;
-} catch {}
 import {
 	View,
 	Text,
@@ -20,6 +12,8 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
 import { colors, spacing, radius, fontSize } from '../../../constants/theme';
 import {
 	listenToGame,
@@ -46,6 +40,12 @@ import {
 import { ReportModal } from '../../../components/ReportModal';
 import { BrandWordmark } from '../../../components/BrandWordmark';
 import { PlayerList } from '../../../components/lobby/PlayerList';
+
+// react-native-share is not bundled in Expo Go — lazy require so it degrades gracefully
+let RNShare: typeof import('react-native-share').default | null = null;
+try {
+	RNShare = require('react-native-share').default;
+} catch {}
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const GRID_PADDING = spacing.lg * 2;

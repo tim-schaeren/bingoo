@@ -9,15 +9,10 @@ import {
 	ActivityIndicator,
 	Alert,
 } from 'react-native';
-import { captureRef } from 'react-native-view-shot';
-import * as Sharing from 'expo-sharing';
-
-let RNShare: typeof import('react-native-share').default | null = null;
-try {
-	RNShare = require('react-native-share').default;
-} catch {}
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
 import { colors, spacing, radius, fontSize } from '../../../constants/theme';
 import {
 	listenToGame,
@@ -29,6 +24,11 @@ import {
 import { getWinningLine } from '../../../lib/gameLogic';
 import { useGameStore } from '../../../store/gameStore';
 import { BrandWordmark } from '../../../components/BrandWordmark';
+
+let RNShare: typeof import('react-native-share').default | null = null;
+try {
+	RNShare = require('react-native-share').default;
+} catch {}
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const GRID_PADDING = spacing.lg * 2;
