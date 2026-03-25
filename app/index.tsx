@@ -13,10 +13,14 @@ import {
 	ActivityIndicator,
 	Linking,
 	Animated,
+	Modal,
 	type LayoutChangeEvent,
 } from 'react-native';
 import { router } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+	SafeAreaView,
+	useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 import { getDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import Constants from 'expo-constants';
@@ -73,7 +77,7 @@ const RULES = [
 	},
 	{
 		emoji: '✓',
-		text: 'Once a prediction comes true, mark it on the bingoo card.\nIt will also be marked for everyone else.',
+		text: 'Once a prediction comes true, mark it on the bingoo card. It will also be marked for everyone else.',
 	},
 	{
 		emoji: '🎉',
@@ -92,13 +96,14 @@ function getGameDisplayName(game: Game): string {
 }
 
 export default function HomeScreen() {
+	const insets = useSafeAreaInsets();
 	const [mode, setMode] = useState<Mode>('home');
 	const [gameName, setGameName] = useState('');
 	const [nickname, setNickname] = useState('');
 	const [joinCode, setJoinCode] = useState('');
 	const [loading, setLoading] = useState(false);
-	const [rulesOpen, setRulesOpen] = useState(false);
-	const [infoOpen, setInfoOpen] = useState(false);
+	const [helpOpen, setHelpOpen] = useState(false);
+	const [helpTab, setHelpTab] = useState<'how' | 'about'>('how');
 	const [acceptedPolicies, setAcceptedPolicies] = useState(false);
 	const [sessionSummaries, setSessionSummaries] = useState<
 		SavedSessionSummary[]
@@ -118,10 +123,9 @@ export default function HomeScreen() {
 
 	const iconAnim = useRef(new Animated.Value(1)).current;
 
-	const setFormAnchor =
-		(anchor: FormAnchor) => (event: LayoutChangeEvent) => {
-			formAnchorsRef.current[anchor] = event.nativeEvent.layout.y;
-		};
+	const setFormAnchor = (anchor: FormAnchor) => (event: LayoutChangeEvent) => {
+		formAnchorsRef.current[anchor] = event.nativeEvent.layout.y;
+	};
 
 	const scrollToAnchor = (anchor: FormAnchor, offset = 180) => {
 		requestAnimationFrame(() => {
@@ -634,7 +638,7 @@ export default function HomeScreen() {
 					{mode === 'create' && (
 						<View style={styles.form}>
 							<View onLayout={setFormAnchor('createGameName')}>
-								<Text style={styles.label}>Game name</Text>
+								<Text style={styles.label}>game name</Text>
 								<TextInput
 									style={styles.input}
 									placeholder="e.g. Paris Trip"
@@ -650,7 +654,7 @@ export default function HomeScreen() {
 							</View>
 
 							<View onLayout={setFormAnchor('createNickname')}>
-								<Text style={styles.label}>Your nickname</Text>
+								<Text style={styles.label}>your nickname</Text>
 								<TextInput
 									style={styles.input}
 									placeholder="e.g. Tom"
@@ -681,28 +685,31 @@ export default function HomeScreen() {
 										<Text style={styles.checkboxMark}>✓</Text>
 									)}
 								</TouchableOpacity>
-								<View style={styles.policyTextWrap}>
-									<Text style={styles.policyText}>
-										I agree to the community rules and privacy policy.
+								<Text style={styles.policyText}>
+									I agree with the{' '}
+									<Text
+										style={styles.policyLinkText}
+										onPress={() => Linking.openURL(COMMUNITY_GUIDELINES_URL)}
+									>
+										community rules
 									</Text>
-									<View style={styles.policyLinks}>
-										<TouchableOpacity
-											onPress={() => Linking.openURL(COMMUNITY_GUIDELINES_URL)}
-										>
-											<Text style={styles.policyLinkText}>Community rules</Text>
-										</TouchableOpacity>
-										<TouchableOpacity
-											onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
-										>
-											<Text style={styles.policyLinkText}>Privacy policy</Text>
-										</TouchableOpacity>
-									</View>
-								</View>
+									{' '}and{' '}
+									<Text
+										style={styles.policyLinkText}
+										onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
+									>
+										privacy policy
+									</Text>
+									.
+								</Text>
 							</View>
 
 							<View onLayout={setFormAnchor('createSubmit')}>
 								<TouchableOpacity
-									style={[styles.primaryButton, loading && styles.buttonDisabled]}
+									style={[
+										styles.primaryButton,
+										loading && styles.buttonDisabled,
+									]}
 									onPress={handleCreate}
 									disabled={loading}
 								>
@@ -716,7 +723,7 @@ export default function HomeScreen() {
 								style={styles.backButton}
 								onPress={() => setMode('home')}
 							>
-								<Text style={styles.backButtonText}>Back</Text>
+								<Text style={styles.backButtonText}>back</Text>
 							</TouchableOpacity>
 						</View>
 					)}
@@ -724,7 +731,7 @@ export default function HomeScreen() {
 					{mode === 'join' && (
 						<View style={styles.form}>
 							<View onLayout={setFormAnchor('joinNickname')}>
-								<Text style={styles.label}>Your nickname</Text>
+								<Text style={styles.label}>your nickname</Text>
 								<TextInput
 									style={styles.input}
 									placeholder="e.g. Tom"
@@ -772,33 +779,37 @@ export default function HomeScreen() {
 										<Text style={styles.checkboxMark}>✓</Text>
 									)}
 								</TouchableOpacity>
-								<View style={styles.policyTextWrap}>
-									<Text style={styles.policyText}>
-										I agree to the community rules and privacy policy.
+								<Text style={styles.policyText}>
+									I agree with the{' '}
+									<Text
+										style={styles.policyLinkText}
+										onPress={() => Linking.openURL(COMMUNITY_GUIDELINES_URL)}
+									>
+										community rules
 									</Text>
-									<View style={styles.policyLinks}>
-										<TouchableOpacity
-											onPress={() => Linking.openURL(COMMUNITY_GUIDELINES_URL)}
-										>
-											<Text style={styles.policyLinkText}>Community rules</Text>
-										</TouchableOpacity>
-										<TouchableOpacity
-											onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
-										>
-											<Text style={styles.policyLinkText}>Privacy policy</Text>
-										</TouchableOpacity>
-									</View>
-								</View>
+									{' '}and{' '}
+									<Text
+										style={styles.policyLinkText}
+										onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
+									>
+										privacy policy
+									</Text>
+									.
+								</Text>
 							</View>
 
 							<View onLayout={setFormAnchor('joinSubmit')}>
 								<TouchableOpacity
-									style={[styles.primaryButton, loading && styles.buttonDisabled]}
+									style={[
+										styles.primaryButton,
+										styles.joinButton,
+										loading && styles.buttonDisabled,
+									]}
 									onPress={handleJoin}
 									disabled={loading}
 								>
 									<Text style={styles.primaryButtonText}>
-										{loading ? 'joining…' : 'join game'}
+										{loading ? 'joining…' : 'join'}
 									</Text>
 								</TouchableOpacity>
 							</View>
@@ -807,82 +818,116 @@ export default function HomeScreen() {
 								style={styles.backButton}
 								onPress={() => setMode('home')}
 							>
-								<Text style={styles.backButtonText}>Back</Text>
+								<Text style={styles.backButtonText}>back</Text>
 							</TouchableOpacity>
-						</View>
-					)}
-
-					{mode === 'home' && (
-						<View style={styles.accordions}>
-							<View style={styles.rules}>
-								<TouchableOpacity
-									style={styles.rulesToggle}
-									onPress={() => setRulesOpen((open) => !open)}
-								>
-									<Text style={styles.rulesToggleText}>how to play</Text>
-									<Text style={styles.rulesChevron}>
-										{rulesOpen ? '▲' : '▼'}
-									</Text>
-								</TouchableOpacity>
-								{rulesOpen && (
-									<View style={styles.rulesList}>
-										{RULES.map((rule, index) => (
-											<View key={index} style={styles.ruleRow}>
-												<Text style={styles.ruleEmoji}>{rule.emoji}</Text>
-												<Text style={styles.ruleText}>{rule.text}</Text>
-											</View>
-										))}
-									</View>
-								)}
-							</View>
-							<View style={[styles.rules, { marginTop: spacing.sm }]}>
-								<TouchableOpacity
-									style={styles.rulesToggle}
-									onPress={() => setInfoOpen((open) => !open)}
-								>
-									<Text style={styles.rulesToggleText}>about</Text>
-									<Text style={styles.rulesChevron}>
-										{infoOpen ? '▲' : '▼'}
-									</Text>
-								</TouchableOpacity>
-								{infoOpen && (
-									<View style={styles.rulesList}>
-										<Text style={styles.ruleText}>
-											bingoo uses anonymous sign-in. Your real identity is never
-											collected or stored.
-										</Text>
-										<TouchableOpacity
-											style={styles.infoLink}
-											onPress={() => Linking.openURL(COMMUNITY_GUIDELINES_URL)}
-										>
-											<Text style={styles.infoLinkText}>Community Rules →</Text>
-										</TouchableOpacity>
-										<TouchableOpacity
-											style={styles.infoLink}
-											onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
-										>
-											<Text style={styles.infoLinkText}>Privacy Policy →</Text>
-										</TouchableOpacity>
-										<TouchableOpacity
-											style={styles.infoLink}
-											onPress={() =>
-												Linking.openURL(
-													`mailto:${FEEDBACK_EMAIL}?subject=bingoo%20feedback`,
-												)
-											}
-										>
-											<Text style={styles.infoLinkText}>Send Feedback →</Text>
-										</TouchableOpacity>
-										<Text style={[styles.ruleText, { marginTop: spacing.xs }]}>
-											Version {APP_VERSION}
-										</Text>
-									</View>
-								)}
-							</View>
 						</View>
 					)}
 				</ScrollView>
 			</KeyboardAvoidingView>
+			{mode === 'home' && (
+				<TouchableOpacity
+					style={[styles.helpButton, { top: insets.top + spacing.sm }]}
+					onPress={() => {
+						setHelpTab('how');
+						setHelpOpen(true);
+					}}
+				>
+					<Text style={styles.helpButtonText}>?</Text>
+				</TouchableOpacity>
+			)}
+
+			<Modal
+				visible={helpOpen}
+				animationType="slide"
+				transparent
+				onRequestClose={() => setHelpOpen(false)}
+			>
+				<TouchableOpacity
+					style={styles.modalOverlay}
+					activeOpacity={1}
+					onPress={() => setHelpOpen(false)}
+				/>
+				<View style={styles.modalSheet}>
+					<View style={styles.modalHandle} />
+					<View style={styles.modalTabs}>
+						<TouchableOpacity
+							style={[
+								styles.modalTab,
+								helpTab === 'how' && styles.modalTabActive,
+							]}
+							onPress={() => setHelpTab('how')}
+						>
+							<Text
+								style={[
+									styles.modalTabText,
+									helpTab === 'how' && styles.modalTabTextActive,
+								]}
+							>
+								How to play
+							</Text>
+						</TouchableOpacity>
+						<TouchableOpacity
+							style={[
+								styles.modalTab,
+								helpTab === 'about' && styles.modalTabActive,
+							]}
+							onPress={() => setHelpTab('about')}
+						>
+							<Text
+								style={[
+									styles.modalTabText,
+									helpTab === 'about' && styles.modalTabTextActive,
+								]}
+							>
+								About
+							</Text>
+						</TouchableOpacity>
+					</View>
+
+					{helpTab === 'how' ? (
+						<View style={styles.modalContent}>
+							{RULES.map((rule, index) => (
+								<View key={index} style={styles.ruleRow}>
+									<Text style={styles.ruleEmoji}>{rule.emoji}</Text>
+									<Text style={styles.ruleText}>{rule.text}</Text>
+								</View>
+							))}
+						</View>
+					) : (
+						<View style={styles.modalContent}>
+							<Text style={styles.ruleText}>
+								bingoo uses anonymous sign-in. Your real identity is never
+								collected or stored.
+							</Text>
+							<TouchableOpacity
+								style={styles.infoLink}
+								onPress={() => Linking.openURL(COMMUNITY_GUIDELINES_URL)}
+							>
+								<Text style={styles.infoLinkText}>Community Rules →</Text>
+							</TouchableOpacity>
+							<TouchableOpacity
+								style={styles.infoLink}
+								onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
+							>
+								<Text style={styles.infoLinkText}>Privacy Policy →</Text>
+							</TouchableOpacity>
+							<TouchableOpacity
+								style={styles.infoLink}
+								onPress={() =>
+									Linking.openURL(
+										`mailto:${FEEDBACK_EMAIL}?subject=bingoo%20feedback`,
+									)
+								}
+							>
+								<Text style={styles.infoLinkText}>Send Feedback →</Text>
+							</TouchableOpacity>
+							<Text style={[styles.ruleText, { marginTop: spacing.xs }]}>
+								Version {APP_VERSION}
+							</Text>
+						</View>
+					)}
+				</View>
+			</Modal>
 		</SafeAreaView>
 	);
 }
@@ -919,13 +964,11 @@ const styles = StyleSheet.create({
 		borderColor: colors.primary,
 	},
 	checkboxMark: { color: '#fff', fontWeight: '800', fontSize: 12 },
-	policyTextWrap: { flex: 1, gap: spacing.xs },
 	policyText: {
 		fontSize: fontSize.sm,
 		color: colors.textLight,
 		lineHeight: 18,
 	},
-	policyLinks: { alignItems: 'flex-start', gap: spacing.xs },
 	policyLinkText: {
 		fontSize: fontSize.sm,
 		color: colors.primary,
@@ -943,7 +986,70 @@ const styles = StyleSheet.create({
 		justifyContent: 'center',
 		paddingBottom: spacing.xl,
 	},
-	accordions: { marginTop: spacing.lg },
+	helpButton: {
+		position: 'absolute',
+		top: 0,
+		right: spacing.md,
+		width: 36,
+		height: 36,
+		borderRadius: radius.full,
+		borderWidth: 1.5,
+		borderColor: colors.border,
+		backgroundColor: colors.surface,
+		alignItems: 'center',
+		justifyContent: 'center',
+	},
+	helpButtonText: {
+		fontSize: fontSize.md,
+		fontWeight: '700',
+		color: colors.textLight,
+	},
+	modalOverlay: {
+		flex: 1,
+		backgroundColor: 'rgba(0,0,0,0.3)',
+	},
+	modalSheet: {
+		backgroundColor: colors.surface,
+		borderTopLeftRadius: radius.lg,
+		borderTopRightRadius: radius.lg,
+		paddingBottom: spacing.xl,
+	},
+	modalHandle: {
+		width: 40,
+		height: 4,
+		borderRadius: radius.full,
+		backgroundColor: colors.border,
+		alignSelf: 'center',
+		marginTop: spacing.sm,
+		marginBottom: spacing.md,
+	},
+	modalTabs: {
+		flexDirection: 'row',
+		borderBottomWidth: 1,
+		borderBottomColor: colors.border,
+		marginHorizontal: spacing.md,
+	},
+	modalTab: {
+		flex: 1,
+		paddingVertical: spacing.sm,
+		alignItems: 'center',
+	},
+	modalTabActive: {
+		borderBottomWidth: 2,
+		borderBottomColor: colors.primary,
+	},
+	modalTabText: {
+		fontSize: fontSize.sm,
+		fontWeight: '600',
+		color: colors.textLight,
+	},
+	modalTabTextActive: {
+		color: colors.primary,
+	},
+	modalContent: {
+		padding: spacing.md,
+		gap: spacing.md,
+	},
 	header: {
 		alignItems: 'center',
 		paddingBottom: spacing.xl,
@@ -975,7 +1081,6 @@ const styles = StyleSheet.create({
 		fontSize: fontSize.sm,
 		color: colors.textLight,
 		fontWeight: '600',
-		textTransform: 'uppercase',
 		letterSpacing: 0.5,
 	},
 	sessionList: {
@@ -1087,7 +1192,6 @@ const styles = StyleSheet.create({
 		fontSize: fontSize.sm,
 		fontWeight: '600',
 		color: colors.textLight,
-		textTransform: 'uppercase',
 		letterSpacing: 0.5,
 	},
 	input: {
@@ -1108,7 +1212,7 @@ const styles = StyleSheet.create({
 		textAlign: 'center',
 	},
 	primaryButton: {
-		backgroundColor: colors.primary,
+		backgroundColor: colors.secondary,
 		borderRadius: radius.lg,
 		padding: spacing.md,
 		alignItems: 'center',
@@ -1118,59 +1222,29 @@ const styles = StyleSheet.create({
 	},
 	primaryButtonText: {
 		color: '#fff',
-		fontSize: fontSize.md,
-		fontWeight: '700',
+		fontSize: fontSize.lg,
+		fontWeight: '800',
+	},
+	joinButton: {
+		backgroundColor: colors.primary,
 	},
 	secondaryButton: {
-		backgroundColor: colors.secondary,
+		backgroundColor: colors.primary,
 		borderRadius: radius.lg,
 		padding: spacing.md,
 		alignItems: 'center',
 		alignSelf: 'center',
 		minWidth: 200,
-		borderWidth: 1.5,
-		borderColor: '#D7A300',
 	},
 	secondaryButtonText: {
-		color: colors.text,
-		fontSize: fontSize.md,
-		fontWeight: '700',
+		color: '#fff',
+		fontSize: fontSize.lg,
+		fontWeight: '800',
 	},
 	backButton: { alignItems: 'center', padding: spacing.sm },
 	backButtonText: { color: colors.textLight, fontSize: fontSize.md },
 	buttonDisabled: { opacity: 0.6 },
 
-	rules: {
-		borderRadius: radius.md,
-		borderWidth: 1,
-		borderColor: colors.border,
-		overflow: 'hidden',
-	},
-	rulesToggle: {
-		flexDirection: 'row',
-		justifyContent: 'space-between',
-		alignItems: 'center',
-		padding: spacing.md,
-		backgroundColor: colors.surface,
-	},
-	rulesToggleText: {
-		fontSize: fontSize.sm,
-		fontWeight: '700',
-		color: colors.text,
-		textTransform: 'uppercase',
-		letterSpacing: 0.5,
-	},
-	rulesChevron: {
-		fontSize: 10,
-		color: colors.textLight,
-	},
-	rulesList: {
-		padding: spacing.md,
-		gap: spacing.md,
-		backgroundColor: colors.surface,
-		borderTopWidth: 1,
-		borderTopColor: colors.border,
-	},
 	ruleRow: {
 		flexDirection: 'row',
 		gap: spacing.sm,
