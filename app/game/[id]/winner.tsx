@@ -109,16 +109,11 @@ export default function WinnerScreen() {
 		try {
 			const captured = await captureRef(cardRef, { format: 'jpg', quality: 0.9 });
 			const reencoded = await ImageManipulator.manipulateAsync(
-				captured,
-				[],
-				{ compress: 0.9, format: ImageManipulator.SaveFormat.JPEG },
+				captured, [], { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
 			);
-			await Sharing.shareAsync(reencoded.uri, {
-				mimeType: 'image/jpeg',
-				UTI: 'public.jpeg',
-			});
-		} catch (e) {
-			Alert.alert('Error', String(e));
+			await Sharing.shareAsync(reencoded.uri, { mimeType: 'image/jpeg', UTI: 'public.jpeg' });
+		} catch {
+			// user dismissed share sheet — not an error
 		}
 	};
 

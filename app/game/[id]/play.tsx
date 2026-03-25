@@ -67,7 +67,7 @@ export default function PlayScreen() {
 	const players = useGameStore((s) => s.players);
 	const myCard = useGameStore((s) => s.myCard);
 
-	const gridRef = useRef<View>(null);
+	const shareRef = useRef<View>(null);
 	const [winningLine, setWinningLine] = useState<number[] | null>(null);
 	const [loadingCard, setLoadingCard] = useState(true);
 	const [allCards, setAllCards] = useState<Map<string, string[]>>(new Map());
@@ -218,18 +218,13 @@ export default function PlayScreen() {
 	});
 
 	const handleShare = async () => {
-		if (!gridRef.current) return;
+		if (!shareRef.current) return;
 		try {
-			const captured = await captureRef(gridRef, { format: 'jpg', quality: 0.9 });
+			const captured = await captureRef(shareRef, { format: 'jpg', quality: 0.9 });
 			const reencoded = await ImageManipulator.manipulateAsync(
-				captured,
-				[],
-				{ compress: 0.9, format: ImageManipulator.SaveFormat.JPEG },
+				captured, [], { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
 			);
-			await Sharing.shareAsync(reencoded.uri, {
-				mimeType: 'image/jpeg',
-				UTI: 'public.jpeg',
-			});
+			await Sharing.shareAsync(reencoded.uri, { mimeType: 'image/jpeg', UTI: 'public.jpeg' });
 		} catch {
 			// user dismissed share sheet — not an error
 		}
@@ -339,10 +334,9 @@ export default function PlayScreen() {
 				</View>
 
 				{/* Bingo grid */}
+				<View>
 				<View
-					style={[styles.grid, { backgroundColor: colors.background }]}
-					ref={gridRef}
-					collapsable={false}
+					style={styles.grid}
 				>
 					{myCard.map((predictionId, index) => {
 						const isMarked = markedIds.has(predictionId);
@@ -383,6 +377,7 @@ export default function PlayScreen() {
 							</TouchableOpacity>
 						);
 					})}
+				</View>
 				</View>
 
 				<TouchableOpacity style={styles.shareButton} onPress={handleShare}>
@@ -434,7 +429,6 @@ export default function PlayScreen() {
 					<TouchableOpacity style={styles.modalCard} activeOpacity={1}>
 						{selectedPred && (
 							<>
-								<Text style={styles.modalPredText}>{selectedPred.text}</Text>
 								{!selectedIsMarked && (
 									<TouchableOpacity
 										style={styles.markButton}
@@ -533,8 +527,7 @@ export default function PlayScreen() {
 											"{getPredictionText(m.predictionId)}"
 										</Text>
 										<Text style={styles.historyEntryMeta}>
-											{m.markedByNickname} · about{' '}
-											{getPlayerName(pred?.subjectId)}
+											marked by {m.markedByNickname}
 										</Text>
 									</View>
 								);
@@ -549,6 +542,50 @@ export default function PlayScreen() {
 					</TouchableOpacity>
 				</TouchableOpacity>
 			</Modal>
+
+		{/* Off-screen non-interactive card — plain Views instead of TouchableOpacity for reliable WhatsApp sharing */}
+		{myCard && (
+			<View
+				ref={shareRef}
+				collapsable={false}
+				pointerEvents="none"
+				style={styles.shareCard}
+			>
+				<Text style={styles.shareCardLabel}>
+					{winningLine ? 'Your winning card' : 'Your card'}
+				</Text>
+				<View style={styles.grid}>
+					{myCard.map((predictionId, index) => {
+						const isMarked = markedIds.has(predictionId);
+						const isWinCell = winningLine?.includes(index) ?? false;
+						return (
+							<View
+								key={predictionId}
+								style={[
+									styles.cell,
+									{ width: cellSize, height: cellSize },
+									isMarked && styles.cellMarked,
+									isWinCell && styles.cellWin,
+								]}
+							>
+								<Text
+									style={[
+										styles.cellText,
+										isMarked && styles.cellTextMarked,
+										isWinCell && styles.cellTextWin,
+									]}
+									numberOfLines={5}
+									adjustsFontSizeToFit
+									minimumFontScale={0.5}
+								>
+									{getPredictionText(predictionId)}
+								</Text>
+							</View>
+						);
+					})}
+				</View>
+			</View>
+		)}
 		</SafeAreaView>
 	);
 }
@@ -749,4 +786,20 @@ const styles = StyleSheet.create({
 		fontSize: fontSize.sm,
 		fontWeight: '700',
 	},
+	shareCard: {
+		position: 'absolute',
+		left: SCREEN_WIDTH,
+		top: 0,
+		backgroundColor: colors.background,
+		padding: spacing.lg,
+		width: SCREEN_WIDTH,
+	},
+	shareCardLabel: {
+		fontSize: fontSize.md,
+		fontWeight: '600',
+		color: colors.textLight,
+		marginBottom: spacing.sm,
+		textAlign: 'center',
+	},
+
 });
