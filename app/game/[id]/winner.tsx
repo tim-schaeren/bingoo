@@ -13,7 +13,9 @@ import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 
 let RNShare: typeof import('react-native-share').default | null = null;
-try { RNShare = require('react-native-share').default; } catch {}
+try {
+	RNShare = require('react-native-share').default;
+} catch {}
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, radius, fontSize } from '../../../constants/theme';
@@ -109,11 +111,21 @@ export default function WinnerScreen() {
 		if (!cardRef.current) return;
 		try {
 			if (RNShare) {
-				const base64 = await captureRef(cardRef, { format: 'jpg', quality: 0.9, result: 'base64' });
-				await RNShare.open({ url: `data:image/jpeg;base64,${base64}`, type: 'image/jpeg' });
+				const base64 = await captureRef(cardRef, {
+					format: 'jpg',
+					quality: 0.9,
+					result: 'base64',
+				});
+				await RNShare.open({
+					url: `data:image/jpeg;base64,${base64}`,
+					type: 'image/jpeg',
+				});
 			} else {
 				const uri = await captureRef(cardRef, { format: 'jpg', quality: 0.9 });
-				await Sharing.shareAsync(uri, { mimeType: 'image/jpeg', UTI: 'public.jpeg' });
+				await Sharing.shareAsync(uri, {
+					mimeType: 'image/jpeg',
+					UTI: 'public.jpeg',
+				});
 			}
 		} catch (e) {
 			Alert.alert('Error', String(e));
@@ -152,12 +164,14 @@ export default function WinnerScreen() {
 		);
 	}
 
-	const renderCard = (wc: WinnerCard) => {
+	const renderCard = (wc: WinnerCard, isWinningCard = true) => {
 		const winLine = getWinningLine(wc.grid, markedIds, gridSize);
 		const isMyCard = wc.id === playerId;
 		const label = isMyCard
-			? 'Your winning card'
-			: `${wc.nickname}'s winning card`;
+			? isWinningCard
+				? 'Your winning card'
+				: 'Your card'
+			: `their winning card`;
 
 		return (
 			<View
@@ -180,7 +194,11 @@ export default function WinnerScreen() {
 								]}
 							>
 								<Text
-									style={[styles.cellText, isMarked && styles.cellTextMarked, isWinCell && styles.cellTextWin]}
+									style={[
+										styles.cellText,
+										isMarked && styles.cellTextMarked,
+										isWinCell && styles.cellTextWin,
+									]}
 									numberOfLines={4}
 									adjustsFontSizeToFit
 									minimumFontScale={0.6}
@@ -198,9 +216,15 @@ export default function WinnerScreen() {
 	return (
 		<SafeAreaView style={styles.safe}>
 			<ScrollView contentContainerStyle={styles.container}>
+				<View style={styles.header}>
+					<TouchableOpacity style={styles.homeButton} onPress={handlePlayAgain}>
+						<Text style={styles.homeButtonText}>home</Text>
+					</TouchableOpacity>
+				</View>
+
 				{/* Winner banner */}
 				<View style={styles.banner}>
-					<Text style={styles.emoji}>{isMe ? '🎉' : '🏆'}</Text>
+					<BrandWordmark style={styles.bingoo} suffix="!" />
 					<Text style={styles.winnerLabel}>
 						{isMe
 							? winners.length > 1
@@ -213,19 +237,20 @@ export default function WinnerScreen() {
 								? `${winners[0].nickname} won!`
 								: winners.map((w) => w.nickname).join(' & ') + ' tied!'}
 					</Text>
-					<BrandWordmark style={styles.bingoo} suffix="!" />
 				</View>
 
 				{/* Card(s) */}
-				<View ref={cardRef} collapsable={false} style={{ backgroundColor: colors.background }}>
+				<View
+					ref={cardRef}
+					collapsable={false}
+					style={{ backgroundColor: colors.background }}
+				>
 					{showOwnCard && ownWinnerCard ? (
 						<View style={styles.cardSection}>
-							{renderCard(ownWinnerCard)}
+							{renderCard(ownWinnerCard, isMe)}
 						</View>
 					) : winnerCards.length === 1 ? (
-						<View style={styles.cardSection}>
-							{renderCard(winnerCards[0])}
-						</View>
+						<View style={styles.cardSection}>{renderCard(winnerCards[0])}</View>
 					) : winnerCards.length > 1 ? (
 						<View style={styles.cardSection}>
 							<ScrollView
@@ -247,7 +272,10 @@ export default function WinnerScreen() {
 								{winnerCards.map((_, i) => (
 									<View
 										key={i}
-										style={[styles.dot, i === carouselIndex && styles.dotActive]}
+										style={[
+											styles.dot,
+											i === carouselIndex && styles.dotActive,
+										]}
 									/>
 								))}
 							</View>
@@ -257,20 +285,38 @@ export default function WinnerScreen() {
 
 				{/* Toggle: winner's card / your card */}
 				{showToggle && ownWinnerCard && (
-					<View style={styles.toggleRow}>
+					<View style={styles.segmentedControl}>
 						<TouchableOpacity
-							style={[styles.toggleBtn, !showOwnCard && styles.toggleBtnActive]}
+							style={[
+								styles.segment,
+								!showOwnCard && styles.segmentActivePurple,
+							]}
 							onPress={() => setShowOwnCard(false)}
+							activeOpacity={0.7}
 						>
-							<Text style={[styles.toggleBtnText, !showOwnCard && styles.toggleBtnTextActive]}>
-								winner's card
+							<Text
+								style={[
+									styles.segmentText,
+									!showOwnCard && styles.segmentTextActivePurple,
+								]}
+							>
+								{winners.length > 1 ? "winners' cards" : "winner's card"}
 							</Text>
 						</TouchableOpacity>
 						<TouchableOpacity
-							style={[styles.toggleBtn, showOwnCard && styles.toggleBtnActive]}
+							style={[
+								styles.segment,
+								showOwnCard && styles.segmentActiveYellow,
+							]}
 							onPress={() => setShowOwnCard(true)}
+							activeOpacity={0.7}
 						>
-							<Text style={[styles.toggleBtnText, showOwnCard && styles.toggleBtnTextActive]}>
+							<Text
+								style={[
+									styles.segmentText,
+									showOwnCard && styles.segmentTextActiveYellow,
+								]}
+							>
 								your card
 							</Text>
 						</TouchableOpacity>
@@ -279,10 +325,6 @@ export default function WinnerScreen() {
 
 				<TouchableOpacity style={styles.shareButton} onPress={handleShare}>
 					<Text style={styles.shareButtonText}>share card</Text>
-				</TouchableOpacity>
-
-				<TouchableOpacity style={styles.button} onPress={handlePlayAgain}>
-					<Text style={styles.buttonText}>back to home</Text>
 				</TouchableOpacity>
 			</ScrollView>
 		</SafeAreaView>
@@ -354,29 +396,38 @@ const styles = StyleSheet.create({
 	dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.border },
 	dotActive: { backgroundColor: colors.primary },
 
-	toggleRow: {
+	segmentedControl: {
 		flexDirection: 'row',
-		gap: spacing.sm,
-	},
-	toggleBtn: {
-		flex: 1,
-		borderRadius: radius.full,
-		paddingVertical: spacing.sm,
-		paddingHorizontal: spacing.md,
-		borderWidth: 1.5,
-		borderColor: colors.border,
-		alignItems: 'center',
-	},
-	toggleBtnActive: {
-		borderColor: colors.primary,
 		backgroundColor: colors.primaryLight,
+		borderRadius: radius.full,
+		padding: 3,
+		alignSelf: 'center',
 	},
-	toggleBtnText: {
-		fontSize: fontSize.sm,
+	segment: {
+		paddingVertical: spacing.sm,
+		paddingHorizontal: spacing.lg,
+		alignItems: 'center',
+		borderRadius: radius.full,
+	},
+	segmentActivePurple: {
+		backgroundColor: colors.primary,
+	},
+	segmentActiveYellow: {
+		backgroundColor: colors.secondary,
+	},
+	segmentText: {
+		fontSize: fontSize.md,
+		fontWeight: '600',
+		color: colors.primary,
+	},
+	segmentTextActivePurple: {
+		color: '#fff',
 		fontWeight: '700',
-		color: colors.textLight,
 	},
-	toggleBtnTextActive: { color: colors.primary },
+	segmentTextActiveYellow: {
+		color: '#fff',
+		fontWeight: '700',
+	},
 
 	shareButton: {
 		borderRadius: radius.lg,
@@ -386,14 +437,27 @@ const styles = StyleSheet.create({
 		borderWidth: 1.5,
 		borderColor: colors.border,
 	},
-	shareButtonText: { color: colors.text, fontSize: fontSize.md, fontWeight: '700' },
-
-	button: {
-		backgroundColor: colors.primary,
-		borderRadius: radius.lg,
-		paddingHorizontal: spacing.xl,
-		paddingVertical: spacing.md,
-		alignItems: 'center',
+	shareButtonText: {
+		color: colors.text,
+		fontSize: fontSize.md,
+		fontWeight: '700',
 	},
-	buttonText: { color: '#fff', fontSize: fontSize.md, fontWeight: '700' },
+
+	header: {
+		width: '100%',
+		alignItems: 'flex-start',
+	},
+	homeButton: {
+		backgroundColor: colors.surface,
+		borderRadius: radius.full,
+		paddingHorizontal: spacing.md,
+		paddingVertical: spacing.sm,
+		borderWidth: 1,
+		borderColor: colors.border,
+	},
+	homeButtonText: {
+		fontSize: fontSize.sm,
+		color: colors.text,
+		fontWeight: '700',
+	},
 });

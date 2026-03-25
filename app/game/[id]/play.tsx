@@ -4,7 +4,9 @@ import * as Sharing from 'expo-sharing';
 
 // react-native-share is not bundled in Expo Go — lazy require so it degrades gracefully
 let RNShare: typeof import('react-native-share').default | null = null;
-try { RNShare = require('react-native-share').default; } catch {}
+try {
+	RNShare = require('react-native-share').default;
+} catch {}
 import {
 	View,
 	Text,
@@ -36,7 +38,11 @@ import {
 import { getWinningLine } from '../../../lib/gameLogic';
 import { useGameStore } from '../../../store/gameStore';
 import { sendPushNotifications } from '../../../lib/notifications';
-import { feedbackMark, feedbackWin, feedbackSelection } from '../../../lib/feedback';
+import {
+	feedbackMark,
+	feedbackWin,
+	feedbackSelection,
+} from '../../../lib/feedback';
 import { ReportModal } from '../../../components/ReportModal';
 import { BrandWordmark } from '../../../components/BrandWordmark';
 import { PlayerList } from '../../../components/lobby/PlayerList';
@@ -74,7 +80,8 @@ export default function PlayScreen() {
 	const [showHistory, setShowHistory] = useState(false);
 	const [showReportModal, setShowReportModal] = useState(false);
 	const [showPlayersModal, setShowPlayersModal] = useState(false);
-	const [reportingPrediction, setReportingPrediction] = useState<Prediction | null>(null);
+	const [reportingPrediction, setReportingPrediction] =
+		useState<Prediction | null>(null);
 	const wasRemovedRef = useRef(false);
 
 	const handleRemovedFromGame = () => {
@@ -97,13 +104,20 @@ export default function PlayScreen() {
 				handleRemovedFromGame();
 				return;
 			}
-			Alert.alert('Connection error', 'Lost connection to game. Check your internet.');
+			Alert.alert(
+				'Connection error',
+				'Lost connection to game. Check your internet.',
+			);
 		};
 		const unsubs = [
-			listenToGame(gameId, (g) => {
-				setGame(g);
-				if (g.status === 'finished') router.replace(`/game/${gameId}/winner`);
-			}, onListenerError),
+			listenToGame(
+				gameId,
+				(g) => {
+					setGame(g);
+					if (g.status === 'finished') router.replace(`/game/${gameId}/winner`);
+				},
+				onListenerError,
+			),
 			listenToMarks(gameId, setMarks, onListenerError),
 			listenToPredictions(gameId, setPredictions, onListenerError),
 			listenToPlayers(gameId, setPlayers, onListenerError),
@@ -151,7 +165,12 @@ export default function PlayScreen() {
 
 	// Check ALL cards on every marks update — so wins are detected even for players who left
 	useEffect(() => {
-		if (!gameId || !game || (game.status !== 'active' && game.status !== 'finished')) return;
+		if (
+			!gameId ||
+			!game ||
+			(game.status !== 'active' && game.status !== 'finished')
+		)
+			return;
 		if (allCards.size === 0) return;
 		const activePlayerIds = new Set(players.map((p) => p.id));
 		const markedSet = new Set(marks.map((m) => m.predictionId));
@@ -161,13 +180,18 @@ export default function PlayScreen() {
 			const line = getWinningLine(grid, markedSet, gridSize);
 			if (!line) return;
 			announcedWinners.current.add(pid);
-			if (pid === playerId) { setWinningLine(line); feedbackWin(); }
+			if (pid === playerId) {
+				setWinningLine(line);
+				feedbackWin();
+			}
 			const winner = players.find((p) => p.id === pid);
 			const winnerNickname = winner?.nickname ?? 'Someone';
 			announceWinner(gameId, pid, winnerNickname)
 				.then(() => {
-					const tokens = players.filter((p) => p.id !== pid).map((p) => p.pushToken);
-					sendPushNotifications(tokens, 'BINGOO! 🎉', `${winnerNickname} won!`);
+					const tokens = players
+						.filter((p) => p.id !== pid)
+						.map((p) => p.pushToken);
+					sendPushNotifications(tokens, 'bingoo! 🎉', `${winnerNickname} won!`);
 				})
 				.catch(() => {});
 		});
@@ -201,11 +225,21 @@ export default function PlayScreen() {
 		if (!gridRef.current) return;
 		try {
 			if (RNShare) {
-				const base64 = await captureRef(gridRef, { format: 'jpg', quality: 0.9, result: 'base64' });
-				await RNShare.open({ url: `data:image/jpeg;base64,${base64}`, type: 'image/jpeg' });
+				const base64 = await captureRef(gridRef, {
+					format: 'jpg',
+					quality: 0.9,
+					result: 'base64',
+				});
+				await RNShare.open({
+					url: `data:image/jpeg;base64,${base64}`,
+					type: 'image/jpeg',
+				});
 			} else {
 				const uri = await captureRef(gridRef, { format: 'jpg', quality: 0.9 });
-				await Sharing.shareAsync(uri, { mimeType: 'image/jpeg', UTI: 'public.jpeg' });
+				await Sharing.shareAsync(uri, {
+					mimeType: 'image/jpeg',
+					UTI: 'public.jpeg',
+				});
 			}
 		} catch {
 			// user dismissed share sheet — not an error
@@ -263,7 +297,9 @@ export default function PlayScreen() {
 							await banPlayerFromGame(gameId, player.id, false);
 						} catch (error) {
 							const message =
-								error instanceof Error ? error.message : 'Could not remove this player. Try again.';
+								error instanceof Error
+									? error.message
+									: 'Could not remove this player. Try again.';
 							Alert.alert('Error', message);
 						}
 					},
@@ -305,13 +341,20 @@ export default function PlayScreen() {
 							{markedIds.size} / {myCard.length} marked
 						</Text>
 					</View>
-					<TouchableOpacity onPress={() => router.replace('/')} style={styles.homeButton}>
+					<TouchableOpacity
+						onPress={() => router.replace('/')}
+						style={styles.homeButton}
+					>
 						<Text style={styles.homeButtonText}>home</Text>
 					</TouchableOpacity>
 				</View>
 
 				{/* Bingo grid */}
-				<View style={[styles.grid, { backgroundColor: colors.background }]} ref={gridRef} collapsable={false}>
+				<View
+					style={[styles.grid, { backgroundColor: colors.background }]}
+					ref={gridRef}
+					collapsable={false}
+				>
 					{myCard.map((predictionId, index) => {
 						const isMarked = markedIds.has(predictionId);
 						const isWinCell = winningLine?.includes(index) ?? false;
@@ -325,11 +368,18 @@ export default function PlayScreen() {
 									isMarked && styles.cellMarked,
 									isWinCell && styles.cellWin,
 								]}
-								onPress={() => { feedbackSelection(); setSelectedPredId(predictionId); }}
+								onPress={() => {
+									feedbackSelection();
+									setSelectedPredId(predictionId);
+								}}
 								activeOpacity={0.7}
 							>
 								<Text
-									style={[styles.cellText, isMarked && styles.cellTextMarked, isWinCell && styles.cellTextWin]}
+									style={[
+										styles.cellText,
+										isMarked && styles.cellTextMarked,
+										isWinCell && styles.cellTextWin,
+									]}
 									numberOfLines={5}
 									adjustsFontSizeToFit
 									minimumFontScale={0.5}
@@ -518,7 +568,12 @@ const styles = StyleSheet.create({
 	safe: { flex: 1, backgroundColor: colors.background },
 	container: { padding: spacing.lg, gap: spacing.lg, alignItems: 'center' },
 
-	header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' },
+	header: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+		width: '100%',
+	},
 	headerSpacer: { minWidth: 76 },
 	manageButton: {
 		minWidth: 76,
@@ -700,5 +755,9 @@ const styles = StyleSheet.create({
 		borderWidth: 1.5,
 		borderColor: colors.border,
 	},
-	shareButtonText: { color: colors.text, fontSize: fontSize.sm, fontWeight: '700' },
+	shareButtonText: {
+		color: colors.text,
+		fontSize: fontSize.sm,
+		fontWeight: '700',
+	},
 });
