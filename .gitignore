@@ -42,4 +42,6 @@ yarn-error.*
 /ios
 /android
 google-play-key.json
+*-firebase-adminsdk-*.json
+bingoo-*.json
 *.aab
