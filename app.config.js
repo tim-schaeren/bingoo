@@ -43,6 +43,7 @@ export default {
     plugins: [
       'expo-router',
       ['expo-notifications', { icon: './assets/icon.png', color: '#6C3CE2' }],
+      ['expo-av', { microphonePermission: false }],
     ],
     extra: {
       // These values are bundled into the app binary and are visible to anyone

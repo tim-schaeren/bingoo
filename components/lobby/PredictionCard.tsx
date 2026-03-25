@@ -62,44 +62,40 @@ export function PredictionCard({
         {prediction.authorId === playerId ? 'by you' : `by ${getPlayerName(prediction.authorId)}`}
       </Text>
 
-      <View style={styles.reactionRow}>
-        {allReactions.map(({ emoji, count }) => {
-          const isMine = myReaction === emoji;
-          return isMine ? (
-            <TouchableOpacity key={emoji} style={styles.reactionAddButton} onPress={onTogglePicker}>
-              <Text style={styles.reactionAddText}>{emoji} {count}</Text>
-            </TouchableOpacity>
-          ) : (
-            <View key={emoji} style={styles.reactionPill}>
-              <Text style={styles.reactionPillText}>{emoji} {count}</Text>
-            </View>
-          );
-        })}
-        {!myReaction && (
-          <TouchableOpacity style={styles.reactionAddButton} onPress={onTogglePicker}>
-            <Text style={styles.reactionAddText}>+</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {reactionPickerOpen && (
+      {reactionPickerOpen ? (
         <View style={styles.reactionPicker}>
           {REACTION_EMOJIS.map((emoji) => (
             <TouchableOpacity
               key={emoji}
-              style={styles.reactionOptionButton}
+              style={[
+                styles.reactionOptionButton,
+                myReaction === emoji && styles.reactionOptionActive,
+              ]}
               onPress={() => onReact(prediction, emoji)}
             >
-              <Text
-                style={[
-                  styles.reactionOption,
-                  myReaction === emoji && styles.reactionOptionActive,
-                ]}
-              >
-                {emoji}
-              </Text>
+              <Text style={styles.reactionOption}>{emoji}</Text>
             </TouchableOpacity>
           ))}
+        </View>
+      ) : (
+        <View style={styles.reactionRow}>
+          {allReactions.map(({ emoji, count }) => {
+            const isMine = myReaction === emoji;
+            return isMine ? (
+              <TouchableOpacity key={emoji} style={styles.reactionAddButton} onPress={onTogglePicker}>
+                <Text style={styles.reactionAddText}>{emoji} {count}</Text>
+              </TouchableOpacity>
+            ) : (
+              <View key={emoji} style={styles.reactionPill}>
+                <Text style={styles.reactionPillText}>{emoji} {count}</Text>
+              </View>
+            );
+          })}
+          {!myReaction && (
+            <TouchableOpacity style={styles.reactionAddButton} onPress={onTogglePicker}>
+              <Text style={styles.reactionAddText}>+</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
     </TouchableOpacity>
@@ -159,23 +155,21 @@ const styles = StyleSheet.create({
   reactionAddText: { fontSize: fontSize.sm, color: colors.textLight },
   reactionPicker: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.sm,
+    backgroundColor: colors.background,
+    borderRadius: radius.full,
     borderWidth: 1,
     borderColor: colors.border,
     marginTop: spacing.xs,
-    gap: spacing.sm,
+    overflow: 'hidden',
   },
   reactionOptionButton: {
-    minWidth: 40,
-    minHeight: 40,
-    borderRadius: radius.full,
+    flex: 1,
+    paddingVertical: spacing.xs,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.background,
   },
-  reactionOption: { fontSize: 24 },
-  reactionOptionActive: { opacity: 0.4 },
+reactionOptionActive: {
+    backgroundColor: colors.surface,
+  },
+  reactionOption: { fontSize: 18 },
 });
