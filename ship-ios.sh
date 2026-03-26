@@ -9,10 +9,9 @@ else
   exit 1
 fi
 
-echo "▶ Building..."
+echo "▶ Building iOS..."
 EAS_BUILD_NO_EXPO_GO_WARNING=true eas build --platform ios --profile production --local
 
-# Find the IPA that was just produced
 IPA=$(ls -t build-*.ipa 2>/dev/null | head -1)
 if [ -z "$IPA" ]; then
   echo "Error: no .ipa file found after build."

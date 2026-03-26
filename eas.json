@@ -37,7 +37,7 @@
         "ascAppId": "6760972106"
       },
       "android": {
-        "serviceAccountKeyPath": "./google-play-key.json",
+        "serviceAccountKeyPath": "./bingoo-service-account.json",
         "track": "internal"
       }
     }
