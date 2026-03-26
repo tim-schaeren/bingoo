@@ -81,7 +81,7 @@ export const REPORT_REASONS = [
 ] as const;
 export type ReportReason = (typeof REPORT_REASONS)[number];
 export type ReportTargetType = 'prediction' | 'player';
-export const MAX_PLAYERS_PER_LOBBY = 9;
+export const MAX_PLAYERS_PER_LOBBY = 10;
 export const MAX_PREDICTION_LENGTH = 50;
 
 export class GameBannedError extends Error {

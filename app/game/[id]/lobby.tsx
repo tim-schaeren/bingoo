@@ -12,6 +12,7 @@ import {
 	KeyboardAvoidingView,
 	Platform,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, radius, fontSize } from '../../../constants/theme';
@@ -97,6 +98,21 @@ export default function LobbyScreen() {
 		null,
 	);
 	const [actionPlayer, setActionPlayer] = useState<Player | null>(null);
+	const [showPoolHint, setShowPoolHint] = useState(false);
+
+	const hintKey = gameId ? `hint_pool_dismissed_${gameId}` : null;
+
+	useEffect(() => {
+		if (!hintKey) return;
+		AsyncStorage.getItem(hintKey).then((val) => {
+			if (val !== 'true') setShowPoolHint(true);
+		});
+	}, [hintKey]);
+
+	const dismissPoolHint = () => {
+		setShowPoolHint(false);
+		if (hintKey) AsyncStorage.setItem(hintKey, 'true');
+	};
 
 	const inputRef = useRef<TextInput>(null);
 	const autoSubmittedRef = useRef(false);
@@ -266,7 +282,7 @@ export default function LobbyScreen() {
 					(p) =>
 						p.id !== selectedSubjectId &&
 						(globalCountBySubject.get(p.id) ?? 0) <
-						REQUIRED_PREDICTIONS_PER_PLAYER,
+							REQUIRED_PREDICTIONS_PER_PLAYER,
 				);
 				if (next) setSelectedSubjectId(next.id);
 			}
@@ -543,6 +559,24 @@ export default function LobbyScreen() {
 						onPressPlayer={handlePlayerAction}
 					/>
 
+					{/* Pool hint */}
+					{showPoolHint && (
+						<TouchableOpacity
+							style={styles.hint}
+							onPress={dismissPoolHint}
+							activeOpacity={0.8}
+						>
+							<View style={styles.hintIcon}>
+								<Text style={styles.hintIconText}>i</Text>
+							</View>
+							<Text style={styles.hintText}>
+								remember, you won't see predictions other players write about
+								you!
+							</Text>
+							<Text style={styles.hintDismiss}>✕</Text>
+						</TouchableOpacity>
+					)}
+
 					{/* Prediction pool */}
 					{visiblePredictions.length > 0 && (
 						<View style={styles.poolGrid}>
@@ -599,8 +633,7 @@ export default function LobbyScreen() {
 										maxLength={MAX_PREDICTION_LENGTH}
 										editable={
 											!!selectedSubjectId &&
-											selectedSubjectCount <
-												REQUIRED_PREDICTIONS_PER_PLAYER
+											selectedSubjectCount < REQUIRED_PREDICTIONS_PER_PLAYER
 										}
 									/>
 								</View>
@@ -631,10 +664,10 @@ export default function LobbyScreen() {
 								{!hasEnoughPredictionsToStart
 									? `The lobby changed, so there are not enough predictions to start. Each player needs at least ${MIN_CARD_CELLS} visible predictions and enough predictions written about them.`
 									: allSubmitted
-									? isHost
-										? 'Everyone is ready. You can start the game.'
-										: 'Everyone is ready. Waiting for the host to start…'
-									: 'Waiting for others to finish writing…'}
+										? isHost
+											? 'Everyone is ready. You can start the game.'
+											: 'Everyone is ready. Waiting for the host to start…'
+										: 'Waiting for others to finish writing…'}
 							</Text>
 							{isHost && (
 								<TouchableOpacity
@@ -813,7 +846,6 @@ const styles = StyleSheet.create({
 
 	section: { gap: spacing.sm },
 
-
 	inputRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'center' },
 	bubbleInputWrap: {
 		flex: 1,
@@ -830,7 +862,7 @@ const styles = StyleSheet.create({
 		backgroundColor: colors.primary,
 		borderRadius: radius.sm,
 		paddingHorizontal: spacing.sm,
-		paddingVertical: spacing.xs + 2,
+		paddingVertical: spacing.sm + 2,
 		margin: spacing.xs,
 		flexShrink: 0,
 	},
@@ -844,13 +876,13 @@ const styles = StyleSheet.create({
 		flex: 1,
 		fontSize: fontSize.md,
 		color: colors.text,
-		paddingVertical: spacing.sm,
+		paddingVertical: spacing.md,
 	},
 	addButton: {
 		backgroundColor: colors.primary,
 		borderRadius: radius.md,
 		paddingHorizontal: spacing.md,
-		paddingVertical: spacing.sm + 2,
+		paddingVertical: spacing.md,
 	},
 	addButtonDisabled: { opacity: 0.4 },
 	addButtonText: { color: '#fff', fontWeight: '700', fontSize: fontSize.sm },
@@ -906,6 +938,42 @@ const styles = StyleSheet.create({
 		textAlign: 'center',
 		fontStyle: 'italic',
 		paddingVertical: spacing.lg,
+	},
+
+	hint: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		backgroundColor: colors.primaryLight,
+		borderRadius: radius.md,
+		padding: spacing.md,
+		gap: spacing.sm,
+	},
+	hintText: {
+		flex: 1,
+		fontSize: fontSize.sm,
+		color: colors.primary,
+		fontWeight: '500',
+	},
+	hintIcon: {
+		width: 24,
+		height: 24,
+		borderRadius: 12,
+		borderWidth: 1.5,
+		borderColor: colors.primary,
+		alignItems: 'center',
+		justifyContent: 'center',
+		flexShrink: 0,
+	},
+	hintIconText: {
+		fontSize: 13,
+		fontWeight: '700',
+		color: colors.primary,
+		lineHeight: 16,
+	},
+	hintDismiss: {
+		fontSize: fontSize.sm,
+		color: colors.primary,
+		fontWeight: '700',
 	},
 
 	quitButton: {
