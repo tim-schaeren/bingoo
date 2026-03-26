@@ -15,7 +15,7 @@ export default {
     ios: {
       supportsTablet: false,
       bundleIdentifier: 'com.bingoo.app',
-      buildNumber: '4',
+      buildNumber: '9',
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
         NSUserNotificationsUsageDescription: 'bingoo notifies you when a prediction comes true, the game starts, or someone wins.',
