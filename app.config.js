@@ -22,6 +22,7 @@ export default {
     },
     android: {
       package: 'com.bingoo.app',
+      versionCode: 4,
       adaptiveIcon: {
         backgroundColor: '#6C3CE2',
         foregroundImage: './assets/android-icon-foreground.png',
