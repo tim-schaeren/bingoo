@@ -19,6 +19,8 @@ const match = c.match(/versionCode: (\d+)/);
 console.log('  versionCode →', match[1]);
 "
 
+export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+
 echo "▶ Building Android..."
 EAS_BUILD_NO_EXPO_GO_WARNING=true eas build --platform android --profile production --local
 
