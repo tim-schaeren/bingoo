@@ -20,7 +20,7 @@ fi
 
 if [ -f bingoo-service-account.json ]; then
   echo "▶ Submitting $AAB to Google Play (internal track)..."
-  eas submit --platform android --path "$AAB" --profile production --non-interactive --no-wait
+  eas submit --platform android --path "$AAB" --profile production --non-interactive
   echo "✓ Done. Check Google Play Console → Internal testing in ~10 minutes."
 else
   echo "⚠ Skipping submit — google-play-key.json not found."

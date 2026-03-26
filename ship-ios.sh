@@ -19,6 +19,6 @@ if [ -z "$IPA" ]; then
 fi
 
 echo "▶ Submitting $IPA to TestFlight..."
-eas submit --platform ios --path "$IPA" --profile production --non-interactive --no-wait
+eas submit --platform ios --path "$IPA" --profile production --non-interactive
 
 echo "✓ Done. Check App Store Connect → TestFlight in ~10 minutes."
