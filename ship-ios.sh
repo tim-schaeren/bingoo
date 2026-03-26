@@ -9,6 +9,16 @@ else
   exit 1
 fi
 
+echo "▶ Bumping iOS build number..."
+node -e "
+const fs = require('fs');
+let c = fs.readFileSync('app.config.js', 'utf8');
+c = c.replace(/buildNumber: '(\d+)'/, (_, n) => 'buildNumber: \'' + (parseInt(n) + 1) + '\'');
+fs.writeFileSync('app.config.js', c);
+const match = c.match(/buildNumber: '(\d+)'/);
+console.log('  buildNumber →', match[1]);
+"
+
 echo "▶ Building iOS..."
 EAS_BUILD_NO_EXPO_GO_WARNING=true eas build --platform ios --profile production --local
 
