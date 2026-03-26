@@ -7,7 +7,7 @@ import {
 	Dimensions,
 	ScrollView,
 	ActivityIndicator,
-	Alert,
+	Modal,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -24,8 +24,8 @@ import {
 } from '../../../lib/firestore';
 import { getWinningLine } from '../../../lib/gameLogic';
 import { useGameStore } from '../../../store/gameStore';
+import { Ionicons } from '@expo/vector-icons';
 import { BrandWordmark } from '../../../components/BrandWordmark';
-
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const GRID_PADDING = spacing.lg * 2;
@@ -59,6 +59,7 @@ export default function WinnerScreen() {
 	const [carouselIndex, setCarouselIndex] = useState(0);
 	const [showOwnCard, setShowOwnCard] = useState(false);
 	const [ownCard, setOwnCard] = useState<string[] | null>(null);
+	const [showHistory, setShowHistory] = useState(false);
 	const carouselRef = useRef<ScrollView>(null);
 	const cardRef = useRef<View>(null);
 
@@ -107,11 +108,18 @@ export default function WinnerScreen() {
 	const handleShare = async () => {
 		if (!cardRef.current) return;
 		try {
-			const captured = await captureRef(cardRef, { format: 'jpg', quality: 0.9 });
-			const reencoded = await ImageManipulator.manipulateAsync(
-				captured, [], { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
-			);
-			await Sharing.shareAsync(reencoded.uri, { mimeType: 'image/jpeg', UTI: 'public.jpeg' });
+			const captured = await captureRef(cardRef, {
+				format: 'jpg',
+				quality: 0.9,
+			});
+			const reencoded = await ImageManipulator.manipulateAsync(captured, [], {
+				compress: 0.9,
+				format: ImageManipulator.SaveFormat.JPEG,
+			});
+			await Sharing.shareAsync(reencoded.uri, {
+				mimeType: 'image/jpeg',
+				UTI: 'public.jpeg',
+			});
 		} catch {
 			// user dismissed share sheet — not an error
 		}
@@ -224,49 +232,51 @@ export default function WinnerScreen() {
 					</Text>
 				</View>
 
-				{/* Card(s) */}
-				<View
-					ref={cardRef}
-					collapsable={false}
-					style={{ backgroundColor: colors.background }}
-				>
-					{showOwnCard && ownWinnerCard ? (
-						<View style={styles.cardSection}>
-							{renderCard(ownWinnerCard, isMe)}
-						</View>
-					) : winnerCards.length === 1 ? (
-						<View style={styles.cardSection}>{renderCard(winnerCards[0])}</View>
-					) : winnerCards.length > 1 ? (
-						<View style={styles.cardSection}>
-							<ScrollView
-								ref={carouselRef}
-								horizontal
-								pagingEnabled
-								showsHorizontalScrollIndicator={false}
-								onMomentumScrollEnd={(e) => {
-									const page = Math.round(
-										e.nativeEvent.contentOffset.x /
-											(SCREEN_WIDTH - spacing.lg * 2),
-									);
-									setCarouselIndex(page);
-								}}
-							>
-								{winnerCards.map((wc) => renderCard(wc))}
-							</ScrollView>
-							<View style={styles.dots}>
-								{winnerCards.map((_, i) => (
-									<View
-										key={i}
-										style={[
-											styles.dot,
-											i === carouselIndex && styles.dotActive,
-										]}
-									/>
-								))}
+				{/* Card(s) with overlapping share button */}
+				<View style={styles.cardWrapper}>
+					<View
+						ref={cardRef}
+						collapsable={false}
+						style={{ backgroundColor: colors.background }}
+					>
+						{showOwnCard && ownWinnerCard ? (
+							<View style={styles.cardSection}>
+								{renderCard(ownWinnerCard, isMe)}
 							</View>
+						) : winnerCards.length === 1 ? (
+							<View style={styles.cardSection}>{renderCard(winnerCards[0])}</View>
+						) : winnerCards.length > 1 ? (
+							<View style={styles.cardSection}>
+								<ScrollView
+									ref={carouselRef}
+									horizontal
+									pagingEnabled
+									showsHorizontalScrollIndicator={false}
+									onMomentumScrollEnd={(e) => {
+										const page = Math.round(
+											e.nativeEvent.contentOffset.x /
+												(SCREEN_WIDTH - spacing.lg * 2),
+										);
+										setCarouselIndex(page);
+									}}
+								>
+									{winnerCards.map((wc) => renderCard(wc))}
+								</ScrollView>
 						</View>
-					) : null}
+						) : null}
+					</View>
+					<TouchableOpacity style={styles.shareButton} onPress={handleShare}>
+						<Ionicons name="share-outline" size={24} color={colors.text} />
+					</TouchableOpacity>
 				</View>
+				{/* Carousel dots — outside cardRef so they don't affect share button overlap */}
+				{!showOwnCard && winnerCards.length > 1 && (
+					<View style={styles.dots}>
+						{winnerCards.map((_, i) => (
+							<View key={i} style={[styles.dot, i === carouselIndex && styles.dotActive]} />
+						))}
+					</View>
+				)}
 
 				{/* Toggle: winner's card / your card */}
 				{showToggle && ownWinnerCard && (
@@ -308,19 +318,58 @@ export default function WinnerScreen() {
 					</View>
 				)}
 
-				<TouchableOpacity style={styles.shareButton} onPress={handleShare}>
-					<Text style={styles.shareButtonText}>share card</Text>
-				</TouchableOpacity>
+				{/* Marks history link */}
+				{marks.length > 0 && (
+					<TouchableOpacity onPress={() => setShowHistory(true)} activeOpacity={0.7}>
+						<Text style={styles.historyLink}>marks →</Text>
+					</TouchableOpacity>
+				)}
 			</ScrollView>
+
+			{/* Marks history modal */}
+			<Modal
+				visible={showHistory}
+				transparent
+				animationType="slide"
+				onRequestClose={() => setShowHistory(false)}
+			>
+				<TouchableOpacity
+					style={styles.overlay}
+					activeOpacity={1}
+					onPress={() => setShowHistory(false)}
+				>
+					<TouchableOpacity style={[styles.modalCard, styles.historyCard]} activeOpacity={1}>
+						<Text style={styles.historyTitle}>All marks</Text>
+						<ScrollView style={styles.historyScroll} bounces={false}>
+							{[...marks].reverse().map((m) => (
+								<View key={m.predictionId} style={styles.historyEntry}>
+									<Text style={styles.historyEntryText}>
+										"{getPredictionText(m.predictionId)}"
+									</Text>
+									<Text style={styles.historyEntryMeta}>
+										marked by {m.markedByNickname}
+									</Text>
+								</View>
+							))}
+						</ScrollView>
+						<TouchableOpacity
+							style={styles.closeButton}
+							onPress={() => setShowHistory(false)}
+						>
+							<Text style={styles.closeButtonText}>Close</Text>
+						</TouchableOpacity>
+					</TouchableOpacity>
+				</TouchableOpacity>
+			</Modal>
 		</SafeAreaView>
 	);
 }
 
 const styles = StyleSheet.create({
 	safe: { flex: 1, backgroundColor: colors.background },
-	container: { padding: spacing.lg, gap: spacing.xl, alignItems: 'center' },
+	container: { padding: spacing.lg, gap: spacing.md, alignItems: 'center' },
 
-	banner: { alignItems: 'center', gap: spacing.sm, paddingTop: spacing.xl },
+	banner: { alignItems: 'center', gap: spacing.sm },
 	emoji: { fontSize: 64 },
 	winnerLabel: {
 		fontSize: fontSize.xl,
@@ -414,20 +463,6 @@ const styles = StyleSheet.create({
 		fontWeight: '700',
 	},
 
-	shareButton: {
-		borderRadius: radius.lg,
-		paddingHorizontal: spacing.xl,
-		paddingVertical: spacing.md,
-		alignItems: 'center',
-		borderWidth: 1.5,
-		borderColor: colors.border,
-	},
-	shareButtonText: {
-		color: colors.text,
-		fontSize: fontSize.md,
-		fontWeight: '700',
-	},
-
 	header: {
 		width: '100%',
 		alignItems: 'flex-start',
@@ -445,4 +480,69 @@ const styles = StyleSheet.create({
 		color: colors.text,
 		fontWeight: '700',
 	},
+
+	cardWrapper: {
+		width: '100%',
+		alignItems: 'center',
+		position: 'relative',
+	},
+	shareButton: {
+		position: 'absolute',
+		bottom: -24,
+		right: 0,
+		width: 48,
+		height: 48,
+		borderRadius: 24,
+		backgroundColor: colors.surface,
+		borderWidth: 1.5,
+		borderColor: colors.border,
+		alignItems: 'center',
+		justifyContent: 'center',
+		zIndex: 1,
+	},
+	historyLink: {
+		fontSize: fontSize.sm,
+		fontWeight: '700',
+		color: colors.textLight,
+	},
+
+	overlay: {
+		flex: 1,
+		backgroundColor: 'rgba(0,0,0,0.5)',
+		justifyContent: 'center',
+		alignItems: 'center',
+		padding: spacing.lg,
+	},
+	modalCard: {
+		backgroundColor: colors.surface,
+		borderRadius: radius.lg,
+		padding: spacing.lg,
+		width: '100%',
+		gap: spacing.md,
+	},
+	historyCard: { maxHeight: '80%' },
+	historyTitle: {
+		fontSize: fontSize.lg,
+		fontWeight: '700',
+		color: colors.text,
+		textAlign: 'center',
+	},
+	historyScroll: { maxHeight: 400 },
+	historyEntry: {
+		paddingVertical: spacing.sm,
+		borderBottomWidth: 1,
+		borderBottomColor: colors.border,
+		gap: spacing.xs,
+	},
+	historyEntryText: {
+		fontSize: fontSize.md,
+		color: colors.text,
+		fontStyle: 'italic',
+	},
+	historyEntryMeta: {
+		fontSize: fontSize.sm,
+		color: colors.textLight,
+	},
+	closeButton: { alignItems: 'center', padding: spacing.sm },
+	closeButtonText: { color: colors.textLight, fontSize: fontSize.md },
 });
