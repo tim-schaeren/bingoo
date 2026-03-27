@@ -39,6 +39,7 @@ import {
 	feedbackSelection,
 } from '../../../lib/feedback';
 import { ReportModal } from '../../../components/ReportModal';
+import { Ionicons } from '@expo/vector-icons';
 import { BrandWordmark } from '../../../components/BrandWordmark';
 import { PlayerList } from '../../../components/lobby/PlayerList';
 
@@ -334,55 +335,52 @@ export default function PlayScreen() {
 				</View>
 
 				{/* Bingo grid */}
-				<View>
-				<View
-					style={styles.grid}
-				>
-					{myCard.map((predictionId, index) => {
-						const isMarked = markedIds.has(predictionId);
-						const isWinCell = winningLine?.includes(index) ?? false;
+				<View style={styles.cardWrapper}>
+					<View style={styles.grid}>
+						{myCard.map((predictionId, index) => {
+							const isMarked = markedIds.has(predictionId);
+							const isWinCell = winningLine?.includes(index) ?? false;
 
-						return (
-							<TouchableOpacity
-								key={predictionId}
-								style={[
-									styles.cell,
-									{ width: cellSize, height: cellSize },
-									isMarked && styles.cellMarked,
-									isWinCell && styles.cellWin,
-								]}
-								onPress={() => {
-									feedbackSelection();
-									setSelectedPredId(predictionId);
-								}}
-								activeOpacity={0.7}
-							>
-								<Text
+							return (
+								<TouchableOpacity
+									key={predictionId}
 									style={[
-										styles.cellText,
-										isMarked && styles.cellTextMarked,
-										isWinCell && styles.cellTextWin,
+										styles.cell,
+										{ width: cellSize, height: cellSize },
+										isMarked && styles.cellMarked,
+										isWinCell && styles.cellWin,
 									]}
-									numberOfLines={5}
-									adjustsFontSizeToFit
-									minimumFontScale={0.5}
+									onPress={() => {
+										feedbackSelection();
+										setSelectedPredId(predictionId);
+									}}
+									activeOpacity={0.7}
 								>
-									{getPredictionText(predictionId)}
-								</Text>
-								{isMarked && (
-									<Text style={styles.markedBy} numberOfLines={1}>
-										✓ {getMarkedByNickname(predictionId)}
+									<Text
+										style={[
+											styles.cellText,
+											isMarked && styles.cellTextMarked,
+											isWinCell && styles.cellTextWin,
+										]}
+										numberOfLines={5}
+										adjustsFontSizeToFit
+										minimumFontScale={0.5}
+									>
+										{getPredictionText(predictionId)}
 									</Text>
-								)}
-							</TouchableOpacity>
-						);
-					})}
+									{isMarked && (
+										<Text style={styles.markedBy} numberOfLines={1}>
+											✓ {getMarkedByNickname(predictionId)}
+										</Text>
+									)}
+								</TouchableOpacity>
+							);
+						})}
+					</View>
+					<TouchableOpacity style={styles.shareButton} onPress={handleShare}>
+						<Ionicons name="share-outline" size={24} color={colors.text} />
+					</TouchableOpacity>
 				</View>
-				</View>
-
-				<TouchableOpacity style={styles.shareButton} onPress={handleShare}>
-					<Text style={styles.shareButtonText}>share card</Text>
-				</TouchableOpacity>
 
 				{/* Mark log */}
 				{visibleMarks.length > 0 && (
@@ -773,18 +771,24 @@ const styles = StyleSheet.create({
 		color: colors.textLight,
 	},
 
-	shareButton: {
-		borderRadius: radius.lg,
-		paddingHorizontal: spacing.xl,
-		paddingVertical: spacing.sm,
+	cardWrapper: {
+		width: '100%',
 		alignItems: 'center',
+		position: 'relative',
+	},
+	shareButton: {
+		position: 'absolute',
+		bottom: -24,
+		right: 0,
+		width: 48,
+		height: 48,
+		borderRadius: 24,
+		backgroundColor: colors.surface,
 		borderWidth: 1.5,
 		borderColor: colors.border,
-	},
-	shareButtonText: {
-		color: colors.text,
-		fontSize: fontSize.sm,
-		fontWeight: '700',
+		alignItems: 'center',
+		justifyContent: 'center',
+		zIndex: 1,
 	},
 	shareCard: {
 		position: 'absolute',
