@@ -560,7 +560,7 @@ export default function LobbyScreen() {
 					/>
 
 					{/* Pool hint */}
-					{showPoolHint && (
+					{showPoolHint && !submitted && players.length >= MIN_PLAYERS && (
 						<TouchableOpacity
 							style={styles.hint}
 							onPress={dismissPoolHint}

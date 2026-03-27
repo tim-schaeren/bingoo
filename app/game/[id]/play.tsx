@@ -680,6 +680,7 @@ const styles = StyleSheet.create({
 		gap: spacing.xs,
 		borderWidth: 1,
 		borderColor: colors.border,
+		marginTop: spacing.lg,
 	},
 	logHeader: {
 		flexDirection: 'row',
