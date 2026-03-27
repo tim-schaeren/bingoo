@@ -322,9 +322,6 @@ export default function PlayScreen() {
 					)}
 					<View style={styles.headerCenter}>
 						<BrandWordmark style={styles.title} />
-						<Text style={styles.subtitle}>
-							{markedIds.size} / {myCard.length} marked
-						</Text>
 					</View>
 					<TouchableOpacity
 						onPress={() => router.replace('/')}
