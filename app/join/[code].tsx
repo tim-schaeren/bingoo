@@ -111,14 +111,14 @@ export default function JoinByLinkScreen() {
 				behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
 			>
 				<View style={styles.container}>
-					<Text style={styles.title}>You're invited!</Text>
-					<Text style={styles.subtitle}>Game code</Text>
+					<Text style={styles.title}>you're invited!</Text>
+					<Text style={styles.subtitle}>game code</Text>
 					<Text style={styles.code}>{code?.toUpperCase()}</Text>
 
 					<Text style={styles.label}>your nickname</Text>
 					<TextInput
 						style={styles.input}
-						placeholder="e.g. Tim"
+						placeholder="e.g. Kylie"
 						placeholderTextColor={colors.textLight}
 						value={nickname}
 						onChangeText={setNickname}

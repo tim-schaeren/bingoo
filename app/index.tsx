@@ -657,7 +657,7 @@ export default function HomeScreen() {
 								<Text style={styles.label}>your nickname</Text>
 								<TextInput
 									style={styles.input}
-									placeholder="e.g. Tom"
+									placeholder="e.g. Tim"
 									placeholderTextColor={colors.textLight}
 									value={nickname}
 									onChangeText={setNickname}
@@ -692,8 +692,8 @@ export default function HomeScreen() {
 										onPress={() => Linking.openURL(COMMUNITY_GUIDELINES_URL)}
 									>
 										community rules
-									</Text>
-									{' '}and{' '}
+									</Text>{' '}
+									and{' '}
 									<Text
 										style={styles.policyLinkText}
 										onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
@@ -734,7 +734,7 @@ export default function HomeScreen() {
 								<Text style={styles.label}>your nickname</Text>
 								<TextInput
 									style={styles.input}
-									placeholder="e.g. Tom"
+									placeholder="e.g. Tim"
 									placeholderTextColor={colors.textLight}
 									value={nickname}
 									onChangeText={setNickname}
@@ -747,7 +747,7 @@ export default function HomeScreen() {
 							</View>
 
 							<View onLayout={setFormAnchor('joinCode')}>
-								<Text style={styles.label}>Game code</Text>
+								<Text style={styles.label}>game code</Text>
 								<TextInput
 									style={[styles.input, styles.codeInput]}
 									placeholder="ABC123"
@@ -786,8 +786,8 @@ export default function HomeScreen() {
 										onPress={() => Linking.openURL(COMMUNITY_GUIDELINES_URL)}
 									>
 										community rules
-									</Text>
-									{' '}and{' '}
+									</Text>{' '}
+									and{' '}
 									<Text
 										style={styles.policyLinkText}
 										onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}
