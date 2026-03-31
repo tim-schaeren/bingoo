@@ -978,6 +978,10 @@ export default function HomeScreen() {
 				transparent
 				onRequestClose={() => setShowDemoEntry(false)}
 			>
+				<KeyboardAvoidingView
+					style={{ flex: 1 }}
+					behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+				>
 				<TouchableOpacity
 					style={styles.modalOverlay}
 					activeOpacity={1}
@@ -1033,6 +1037,7 @@ export default function HomeScreen() {
 						</TouchableOpacity>
 					</View>
 				</View>
+				</KeyboardAvoidingView>
 			</Modal>
 		</SafeAreaView>
 	);
