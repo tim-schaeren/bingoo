@@ -25,6 +25,9 @@ interface GameState {
   marks: Mark[];
   myCard: string[] | null;
 
+  // Demo mode (never persisted)
+  isDemoMode: boolean;
+
   // Actions
   setPushToken: (token: string | null) => void;
   upsertMembership: (membership: SavedMembership) => void;
@@ -36,8 +39,10 @@ interface GameState {
   setGame: (game: Game | null) => void;
   setPlayers: (players: Player[]) => void;
   setPredictions: (predictions: Prediction[]) => void;
+  appendPredictions: (preds: Prediction[]) => void;
   setMarks: (marks: Mark[]) => void;
   setMyCard: (grid: string[] | null) => void;
+  setDemoMode: (v: boolean) => void;
 }
 
 const emptyLiveState = {
@@ -64,6 +69,7 @@ export const useGameStore = create<GameState>()(
       memberships: [],
       currentGameId: null,
       pushToken: null,
+      isDemoMode: false,
       ...emptyLiveState,
 
       setPushToken: (token) => set({ pushToken: token }),
@@ -116,8 +122,10 @@ export const useGameStore = create<GameState>()(
       setGame: (game) => set({ game }),
       setPlayers: (players) => set({ players }),
       setPredictions: (predictions) => set({ predictions }),
+      appendPredictions: (preds) => set((state) => ({ predictions: [...state.predictions, ...preds] })),
       setMarks: (marks) => set({ marks }),
       setMyCard: (myCard) => set({ myCard }),
+      setDemoMode: (v) => set({ isDemoMode: v }),
     }),
     {
       name: 'bingoo-session',

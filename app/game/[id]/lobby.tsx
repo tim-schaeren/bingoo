@@ -42,7 +42,11 @@ import {
 	getMinVisiblePredictions,
 	MIN_CARD_CELLS,
 	REQUIRED_PREDICTIONS_PER_PLAYER,
+	generateId,
+	computeGridSize,
+	generateCards,
 } from '../../../lib/gameLogic';
+import { buildBotPredictions } from '../../../lib/demo';
 import { useGameStore } from '../../../store/gameStore';
 import { sendPushNotifications } from '../../../lib/notifications';
 import { feedbackDone, feedbackStart } from '../../../lib/feedback';
@@ -75,6 +79,10 @@ export default function LobbyScreen() {
 	const setPredictions = useGameStore((s) => s.setPredictions);
 	const removeMembership = useGameStore((s) => s.removeMembership);
 	const setCurrentGame = useGameStore((s) => s.setCurrentGame);
+	const isDemoMode = useGameStore((s) => s.isDemoMode);
+	const appendPredictions = useGameStore((s) => s.appendPredictions);
+	const setDemoMode = useGameStore((s) => s.setDemoMode);
+	const setMyCard = useGameStore((s) => s.setMyCard);
 
 	const game = useGameStore((s) => s.game);
 	const players = useGameStore((s) => s.players);
@@ -131,6 +139,7 @@ export default function LobbyScreen() {
 
 	useEffect(() => {
 		if (!gameId) return;
+		if (isDemoMode) return; // DEMO: game/players/predictions already in store
 		setCurrentGame(gameId);
 		const onListenerError = (error: Error & { code?: string }) => {
 			if (error.code === 'permission-denied') {
@@ -242,7 +251,7 @@ export default function LobbyScreen() {
 		}
 	}, [players, predictions]);
 
-	// Auto-submit when all subjects reach the global limit
+	// Auto-submit when all subjects reach the limit
 	useEffect(() => {
 		if (!allSubjectsFull) {
 			editingRef.current = false;
@@ -251,10 +260,36 @@ export default function LobbyScreen() {
 		if (submitted || autoSubmittedRef.current || editingRef.current) return;
 		autoSubmittedRef.current = true;
 		feedbackDone();
+		if (isDemoMode) {
+			const { players: current, setPlayers: setP } = useGameStore.getState();
+			setP(current.map((p) => p.id === playerId ? { ...p, predictionsSubmitted: true } : p));
+			return;
+		}
 		markPlayerDone(gameId!, playerId!).catch(() => {
 			autoSubmittedRef.current = false;
 		});
 	}, [allSubjectsFull, submitted]);
+
+	// Bot submission timers (demo mode only)
+	useEffect(() => {
+		if (!isDemoMode || !playerId) return;
+		const bots = useGameStore.getState().players.filter((p) => p.id !== playerId);
+		const timers = bots.map((bot, i) =>
+			setTimeout(() => {
+				const { players: current, predictions: currentPreds, appendPredictions: append, setPlayers: setP } = useGameStore.getState();
+				const currentBot = current.find((p) => p.id === bot.id);
+				if (!currentBot) return;
+				// Count current global predictions per subject, then skip any that are already full
+				const countBySubject = new Map<string, number>();
+				currentPreds.forEach((p) => countBySubject.set(p.subjectId, (countBySubject.get(p.subjectId) ?? 0) + 1));
+				const preds = buildBotPredictions(currentBot, current, playerId)
+					.filter((p) => (countBySubject.get(p.subjectId) ?? 0) < REQUIRED_PREDICTIONS_PER_PLAYER);
+				if (preds.length > 0) append(preds);
+				setP(current.map((p) => p.id === currentBot.id ? { ...p, predictionsSubmitted: true } : p));
+			}, (i + 1) * 2000),
+		);
+		return () => timers.forEach(clearTimeout);
+	}, []);
 
 	const getPlayerName = (pid: string | undefined) =>
 		players.find((p) => p.id === pid)?.nickname ?? '…';
@@ -271,8 +306,30 @@ export default function LobbyScreen() {
 
 	const handleAddPrediction = async () => {
 		if (!playerId || !gameId || !selectedSubjectId || !predText.trim()) return;
+
 		const globalCount = globalCountBySubject.get(selectedSubjectId) ?? 0;
 		if (globalCount >= REQUIRED_PREDICTIONS_PER_PLAYER) return;
+
+		if (isDemoMode) {
+			appendPredictions([{
+				id: generateId(),
+				authorId: playerId,
+				subjectId: selectedSubjectId,
+				text: predText.trim(),
+				createdAt: new Date() as any,
+			} as Prediction]);
+			setPredText('');
+			if (globalCount + 1 >= REQUIRED_PREDICTIONS_PER_PLAYER) {
+				const next = otherPlayers.find(
+					(p) =>
+						p.id !== selectedSubjectId &&
+						(globalCountBySubject.get(p.id) ?? 0) < REQUIRED_PREDICTIONS_PER_PLAYER,
+				);
+				if (next) setSelectedSubjectId(next.id);
+			}
+			inputRef.current?.focus();
+			return;
+		}
 		setAdding(true);
 		try {
 			await addPrediction(gameId, playerId, selectedSubjectId, predText.trim());
@@ -298,6 +355,10 @@ export default function LobbyScreen() {
 		if (!playerId || !gameId) return;
 		editingRef.current = true;
 		autoSubmittedRef.current = false;
+		if (isDemoMode) {
+			setPlayers(players.map((p) => p.id === playerId ? { ...p, predictionsSubmitted: false } : p));
+			return;
+		}
 		try {
 			await markPlayerWriting(gameId, playerId);
 		} catch {
@@ -310,6 +371,10 @@ export default function LobbyScreen() {
 		editingRef.current = false;
 		autoSubmittedRef.current = true;
 		feedbackDone();
+		if (isDemoMode) {
+			setPlayers(players.map((p) => p.id === playerId ? { ...p, predictionsSubmitted: true } : p));
+			return;
+		}
 		try {
 			await markPlayerDone(gameId, playerId);
 		} catch {
@@ -332,11 +397,36 @@ export default function LobbyScreen() {
 			).find(([, uids]) => uids.includes(playerId))?.[0] ?? null;
 		const next = current === emoji ? null : emoji;
 		setReactionPickerFor(null);
+		if (isDemoMode) {
+			setPredictions(predictions.map((p) => {
+				if (p.id !== prediction.id) return p;
+				const reactions = { ...(p.reactions ?? {}) } as Record<ReactionEmoji, string[]>;
+				if (current) {
+					const filtered = (reactions[current] ?? []).filter((uid) => uid !== playerId);
+					if (filtered.length === 0) delete reactions[current];
+					else reactions[current] = filtered;
+				}
+				if (next) reactions[next] = [...(reactions[next] ?? []), playerId];
+				return { ...p, reactions };
+			}));
+			return;
+		}
 		await setReaction(gameId, prediction.id, playerId, next, current);
 	};
 
 	const handleDeletePrediction = (predictionId: string) => {
 		if (!gameId) return;
+		if (isDemoMode) {
+			Alert.alert('Remove prediction', 'Delete this from the pool?', [
+				{ text: 'Cancel', style: 'cancel' },
+				{
+					text: 'Delete',
+					style: 'destructive',
+					onPress: () => setPredictions(predictions.filter((p) => p.id !== predictionId)),
+				},
+			]);
+			return;
+		}
 		Alert.alert('Remove prediction', 'Delete this from the pool?', [
 			{ text: 'Cancel', style: 'cancel' },
 			{
@@ -360,6 +450,13 @@ export default function LobbyScreen() {
 
 	const handleSubmitReport = async (reason: ReportReason) => {
 		if (!gameId || !playerId) return;
+		if (isDemoMode) {
+			// Demo: fake success without hitting Firestore
+			setReportingPrediction(null);
+			setReportingPlayer(null);
+			Alert.alert('Reported', 'Thanks. We will review it.');
+			return;
+		}
 		try {
 			if (reportingPrediction) {
 				await reportPrediction(
@@ -393,6 +490,13 @@ export default function LobbyScreen() {
 					text: 'Remove',
 					style: 'destructive',
 					onPress: async () => {
+						if (isDemoMode) {
+							// Demo: remove bot + their predictions from store locally
+							const s = useGameStore.getState();
+							s.setPlayers(s.players.filter((p) => p.id !== player.id));
+							s.setPredictions(s.predictions.filter((p) => p.authorId !== player.id && p.subjectId !== player.id));
+							return;
+						}
 						try {
 							await banPlayerFromGame(gameId, player.id, true);
 						} catch (error) {
@@ -444,6 +548,14 @@ export default function LobbyScreen() {
 		feedbackStart();
 		setStarting(true);
 		try {
+			if (isDemoMode) {
+				const gridSize = computeGridSize(players, predictions);
+				const cards = generateCards(players, predictions, gridSize);
+				setMyCard(playerId ? cards[playerId] ?? null : null);
+				setGame({ ...game!, status: 'active', gridSize });
+				router.replace(`/game/${gameId}/play`);
+				return;
+			}
 			await startGame(gameId, players, predictions);
 			const tokens = players
 				.filter((p) => p.id !== playerId)
@@ -464,6 +576,12 @@ export default function LobbyScreen() {
 	};
 
 	const handleCancel = () => {
+		if (isDemoMode) {
+			setDemoMode(false);
+			removeMembership(gameId!);
+			router.replace('/');
+			return;
+		}
 		Alert.alert(
 			'Cancel game',
 			'This will end the lobby for everyone. Are you sure?',
@@ -486,6 +604,12 @@ export default function LobbyScreen() {
 	};
 
 	const handleLeave = () => {
+		if (isDemoMode) {
+			setDemoMode(false);
+			removeMembership(gameId!);
+			router.replace('/');
+			return;
+		}
 		Alert.alert('Leave lobby', 'You will be removed from this game.', [
 			{ text: 'Stay', style: 'cancel' },
 			{
@@ -515,8 +639,7 @@ export default function LobbyScreen() {
 	}
 
 	const selectedSubject = otherPlayers.find((p) => p.id === selectedSubjectId);
-	const selectedSubjectCount =
-		globalCountBySubject.get(selectedSubjectId ?? '') ?? 0;
+	const selectedSubjectCount = globalCountBySubject.get(selectedSubjectId ?? '') ?? 0;
 	const canAdd =
 		!!selectedSubjectId &&
 		predText.trim().length > 0 &&

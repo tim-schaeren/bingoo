@@ -12,6 +12,7 @@ import { registerForPushNotifications } from '../lib/notifications';
 import { savePushToken } from '../lib/firestore';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { OfflineBanner } from '../components/OfflineBanner';
+import { DemoBanner } from '../components/DemoBanner';
 
 async function waitForHydration(): Promise<void> {
   if (useGameStore.persist.hasHydrated()) return;
@@ -46,6 +47,7 @@ function getRouteForStatus(gameId: string, status: string): string | null {
 export default function RootLayout() {
   const [ready, setReady] = useState(false);
   const [initError, setInitError] = useState(false);
+  const isDemoMode = useGameStore((s) => s.isDemoMode);
 
   const init = useCallback(async () => {
     setInitError(false);
@@ -158,6 +160,7 @@ export default function RootLayout() {
         />
         <OfflineBanner />
       </ErrorBoundary>
+      {isDemoMode && <DemoBanner />}
       {!ready && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator color={colors.primary} />

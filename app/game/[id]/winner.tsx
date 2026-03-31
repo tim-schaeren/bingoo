@@ -48,6 +48,9 @@ export default function WinnerScreen() {
 	const setPlayers = useGameStore((s) => s.setPlayers);
 	const removeMembership = useGameStore((s) => s.removeMembership);
 	const setCurrentGame = useGameStore((s) => s.setCurrentGame);
+	const isDemoMode = useGameStore((s) => s.isDemoMode);
+	const setDemoMode = useGameStore((s) => s.setDemoMode);
+	const myCard = useGameStore((s) => s.myCard);
 
 	const game = useGameStore((s) => s.game);
 	const marks = useGameStore((s) => s.marks);
@@ -65,6 +68,7 @@ export default function WinnerScreen() {
 
 	useEffect(() => {
 		if (!gameId) return;
+		if (isDemoMode) return; // DEMO: game/marks/players/predictions already in store
 		setCurrentGame(gameId);
 		const unsubs = [
 			listenToGame(gameId, setGame),
@@ -80,6 +84,15 @@ export default function WinnerScreen() {
 
 	useEffect(() => {
 		if (!gameId || winners.length === 0) return;
+
+		if (isDemoMode) {
+			// In demo mode the winner is always the host; use the card from the store
+			const card = myCard;
+			const winner = winners[0];
+			if (card && winner) setWinnerCards([{ ...winner, grid: card }]);
+			setLoadingCards(false);
+			return;
+		}
 
 		// Sort so current player's card comes first
 		const sorted = [...winners].sort((a, b) => {
@@ -100,6 +113,10 @@ export default function WinnerScreen() {
 
 	useEffect(() => {
 		if (!gameId || !playerId) return;
+		if (isDemoMode) {
+			if (myCard) setOwnCard(myCard);
+			return;
+		}
 		getCard(gameId, playerId).then((grid) => {
 			if (grid) setOwnCard(grid);
 		});
@@ -145,6 +162,7 @@ export default function WinnerScreen() {
 			: null;
 
 	const handlePlayAgain = () => {
+		if (isDemoMode) setDemoMode(false);
 		if (gameId) removeMembership(gameId);
 		router.replace('/');
 	};

@@ -4,6 +4,7 @@ import {
 	Text,
 	TextInput,
 	TouchableOpacity,
+	Pressable,
 	StyleSheet,
 	ScrollView,
 	Alert,
@@ -41,6 +42,8 @@ import {
 	type SavedMembership,
 	useGameStore,
 } from '../store/gameStore';
+import { currentUid } from '../lib/auth';
+import { buildDemoState } from '../lib/demo';
 
 const PRIVACY_POLICY_URL =
 	'https://tim-schaeren.github.io/bingoo/privacy-policy.html';
@@ -119,9 +122,19 @@ export default function HomeScreen() {
 		upsertMembership,
 		removeMembership,
 		setCurrentGame,
+		setGame,
+		setPlayers,
+		setDemoMode,
 	} = useGameStore();
 
 	const iconAnim = useRef(new Animated.Value(1)).current;
+
+	const logoTapCountRef = useRef(0);
+	const logoTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const [showDemoEntry, setShowDemoEntry] = useState(false);
+	const [demoNickname, setDemoNickname] = useState('');
+	const [demoLoading, setDemoLoading] = useState(false);
+	const [numBots, setNumBots] = useState(4);
 
 	const setFormAnchor = (anchor: FormAnchor) => (event: LayoutChangeEvent) => {
 		formAnchorsRef.current[anchor] = event.nativeEvent.layout.y;
@@ -468,6 +481,36 @@ export default function HomeScreen() {
 		}
 	};
 
+	const handleLogoTap = () => {
+		if (logoTapTimerRef.current) clearTimeout(logoTapTimerRef.current);
+		logoTapCountRef.current += 1;
+		if (logoTapCountRef.current >= 7) {
+			logoTapCountRef.current = 0;
+			setShowDemoEntry(true);
+			return;
+		}
+		logoTapTimerRef.current = setTimeout(() => {
+			logoTapCountRef.current = 0;
+		}, 2000);
+	};
+
+	const handleStartDemo = () => {
+		if (!demoNickname.trim()) return;
+		setDemoLoading(true);
+		try {
+			const uid = currentUid();
+			const { demoGameId, game, players } = buildDemoState(uid, demoNickname.trim(), numBots);
+			setGame(game);
+			setPlayers(players);
+			setDemoMode(true);
+			upsertMembership({ gameId: demoGameId, playerId: uid, nickname: demoNickname.trim(), isHost: true });
+			setShowDemoEntry(false);
+			router.replace(`/game/${demoGameId}/lobby`);
+		} finally {
+			setDemoLoading(false);
+		}
+	};
+
 	const renderHomeActions = () => (
 		<View style={styles.actions}>
 			{!canAddMembership && (
@@ -518,7 +561,7 @@ export default function HomeScreen() {
 				>
 					{mode === 'home' ? (
 						<View style={styles.homeMain}>
-							<View style={styles.header}>
+							<Pressable style={styles.header} onPress={handleLogoTap}>
 								<Animated.View
 									style={{
 										opacity: iconAnim,
@@ -542,7 +585,7 @@ export default function HomeScreen() {
 								<Text style={styles.tagline}>
 									your friends know you too well.
 								</Text>
-							</View>
+							</Pressable>
 
 							{sessionSummaries.length > 0 ? (
 								<View style={styles.sessionSection}>
@@ -928,6 +971,69 @@ export default function HomeScreen() {
 					)}
 				</View>
 			</Modal>
+
+			<Modal
+				visible={showDemoEntry}
+				animationType="slide"
+				transparent
+				onRequestClose={() => setShowDemoEntry(false)}
+			>
+				<TouchableOpacity
+					style={styles.modalOverlay}
+					activeOpacity={1}
+					onPress={() => setShowDemoEntry(false)}
+				/>
+				<View style={styles.modalSheet}>
+					<View style={styles.modalHandle} />
+					<View style={styles.modalContent}>
+						<Text style={styles.label}>demo mode</Text>
+						<Text style={[styles.ruleText, { marginBottom: spacing.md }]}>
+							Try bingoo solo with Disney bot players.
+						</Text>
+						<View style={styles.stepperRow}>
+							<Text style={styles.stepperLabel}>fake players</Text>
+							<View style={styles.stepper}>
+								<TouchableOpacity
+									style={styles.stepperButton}
+									onPress={() => setNumBots((n) => Math.max(2, n - 1))}
+								>
+									<Text style={styles.stepperButtonText}>−</Text>
+								</TouchableOpacity>
+								<Text style={styles.stepperValue}>{numBots}</Text>
+								<TouchableOpacity
+									style={styles.stepperButton}
+									onPress={() => setNumBots((n) => Math.min(9, n + 1))}
+								>
+									<Text style={styles.stepperButtonText}>+</Text>
+								</TouchableOpacity>
+							</View>
+						</View>
+						<TextInput
+							style={styles.input}
+							placeholder="your nickname"
+							placeholderTextColor={colors.textLight}
+							value={demoNickname}
+							onChangeText={setDemoNickname}
+							maxLength={20}
+							autoFocus
+							returnKeyType="done"
+							onSubmitEditing={handleStartDemo}
+						/>
+						<TouchableOpacity
+							style={[
+								styles.primaryButton,
+								(!demoNickname.trim() || demoLoading) && styles.buttonDisabled,
+							]}
+							onPress={handleStartDemo}
+							disabled={!demoNickname.trim() || demoLoading}
+						>
+							<Text style={styles.primaryButtonText}>
+								{demoLoading ? 'starting…' : 'start demo'}
+							</Text>
+						</TouchableOpacity>
+					</View>
+				</View>
+			</Modal>
 		</SafeAreaView>
 	);
 }
@@ -1049,6 +1155,46 @@ const styles = StyleSheet.create({
 	modalContent: {
 		padding: spacing.md,
 		gap: spacing.md,
+	},
+	stepperRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+	},
+	stepperLabel: {
+		fontSize: fontSize.sm,
+		color: colors.textLight,
+		fontWeight: '600',
+		textTransform: 'uppercase',
+		letterSpacing: 0.5,
+	},
+	stepper: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		gap: spacing.sm,
+	},
+	stepperButton: {
+		width: 32,
+		height: 32,
+		borderRadius: radius.md,
+		borderWidth: 1.5,
+		borderColor: colors.border,
+		backgroundColor: colors.surface,
+		alignItems: 'center',
+		justifyContent: 'center',
+	},
+	stepperButtonText: {
+		fontSize: fontSize.md,
+		color: colors.text,
+		fontWeight: '600',
+		lineHeight: 20,
+	},
+	stepperValue: {
+		fontSize: fontSize.md,
+		fontWeight: '700',
+		color: colors.text,
+		minWidth: 24,
+		textAlign: 'center',
 	},
 	header: {
 		alignItems: 'center',

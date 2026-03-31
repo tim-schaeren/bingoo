@@ -29,6 +29,7 @@ import {
 	type Prediction,
 	type Player,
 	type ReportReason,
+	type Mark,
 } from '../../../lib/firestore';
 import { getWinningLine } from '../../../lib/gameLogic';
 import { useGameStore } from '../../../store/gameStore';
@@ -61,6 +62,7 @@ export default function PlayScreen() {
 	const setPlayers = useGameStore((s) => s.setPlayers);
 	const removeMembership = useGameStore((s) => s.removeMembership);
 	const setCurrentGame = useGameStore((s) => s.setCurrentGame);
+	const isDemoMode = useGameStore((s) => s.isDemoMode);
 
 	const game = useGameStore((s) => s.game);
 	const marks = useGameStore((s) => s.marks);
@@ -95,6 +97,7 @@ export default function PlayScreen() {
 
 	useEffect(() => {
 		if (!gameId) return;
+		if (isDemoMode) return; // DEMO: game/marks/predictions/players already in store
 		setCurrentGame(gameId);
 		const onListenerError = (error: Error & { code?: string }) => {
 			if (error.code === 'permission-denied') {
@@ -135,6 +138,10 @@ export default function PlayScreen() {
 	// Load own card for display
 	useEffect(() => {
 		if (!gameId || !playerId) return;
+		if (isDemoMode) {
+			setLoadingCard(false); // myCard already set from doStartGame
+			return;
+		}
 		getCard(gameId, playerId).then((grid) => {
 			if (grid) setMyCard(grid);
 			setLoadingCard(false);
@@ -144,6 +151,12 @@ export default function PlayScreen() {
 	// Load all players' cards for universal win detection
 	useEffect(() => {
 		if (!gameId || players.length === 0) return;
+		if (isDemoMode) {
+			// In demo mode bots never win; only track the host's card
+			const card = useGameStore.getState().myCard;
+			if (playerId && card) setAllCards(new Map([[playerId, card]]));
+			return;
+		}
 		const activePlayerIds = new Set(players.map((p) => p.id));
 		setAllCards((prev) => {
 			const next = new Map<string, string[]>();
@@ -169,8 +182,24 @@ export default function PlayScreen() {
 		)
 			return;
 		if (allCards.size === 0) return;
-		const activePlayerIds = new Set(players.map((p) => p.id));
 		const markedSet = new Set(marks.map((m) => m.predictionId));
+
+		if (isDemoMode) {
+			// Only the host can win in demo mode
+			if (!myCard || !playerId || !nickname || announcedWinners.current.has(playerId)) return;
+			const line = getWinningLine(myCard, markedSet, gridSize);
+			if (!line) return;
+			announcedWinners.current.add(playerId);
+			setWinningLine(line);
+			feedbackWin();
+			setTimeout(() => {
+				setGame({ ...game, status: 'finished', winners: [{ id: playerId, nickname }] });
+				router.replace(`/game/${gameId}/winner`);
+			}, 1500);
+			return;
+		}
+
+		const activePlayerIds = new Set(players.map((p) => p.id));
 		allCards.forEach((grid, pid) => {
 			if (!activePlayerIds.has(pid)) return;
 			if (announcedWinners.current.has(pid)) return;
@@ -234,10 +263,21 @@ export default function PlayScreen() {
 	const doMarkPrediction = (predictionId: string) => {
 		if (!gameId || !playerId || !nickname) return;
 		feedbackMark();
+		setSelectedPredId(null);
+		if (isDemoMode) {
+			const { marks: current, setMarks: setM } = useGameStore.getState();
+			if (current.some((m) => m.predictionId === predictionId)) return;
+			setM([...current, {
+				predictionId,
+				markedBy: playerId,
+				markedByNickname: nickname,
+				markedAt: new Date() as any,
+			} as Mark]);
+			return;
+		}
 		const pred = getPrediction(predictionId);
 		markPrediction(gameId, predictionId, playerId, nickname)
 			.then(() => {
-				// Notify everyone except the marker and the subject of the prediction
 				const tokens = players
 					.filter((p) => p.id !== playerId && p.id !== pred?.subjectId)
 					.map((p) => p.pushToken);
@@ -251,11 +291,17 @@ export default function PlayScreen() {
 			.catch(() => {
 				Alert.alert('Error', 'Could not mark this prediction. Try again.');
 			});
-		setSelectedPredId(null);
 	};
 
 	const handleReportSelectedPrediction = async (reason: ReportReason) => {
 		if (!gameId || !playerId || !reportingPrediction) return;
+		if (isDemoMode) {
+			// Demo: fake success without hitting Firestore
+			setShowReportModal(false);
+			setReportingPrediction(null);
+			Alert.alert('Reported', 'Thanks. We will review it.');
+			return;
+		}
 		try {
 			await reportPrediction(gameId, reportingPrediction.id, playerId, reason);
 			Alert.alert('Reported', 'Thanks. We will review it.');
@@ -278,6 +324,13 @@ export default function PlayScreen() {
 					text: 'Remove',
 					style: 'destructive',
 					onPress: async () => {
+						if (isDemoMode) {
+							// Demo: remove bot + their predictions from store locally
+							const s = useGameStore.getState();
+							s.setPlayers(s.players.filter((p) => p.id !== player.id));
+							s.setPredictions(s.predictions.filter((p) => p.authorId !== player.id && p.subjectId !== player.id));
+							return;
+						}
 						try {
 							await banPlayerFromGame(gameId, player.id, false);
 						} catch (error) {
