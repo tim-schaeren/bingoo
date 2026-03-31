@@ -124,6 +124,8 @@ export default function HomeScreen() {
 		setCurrentGame,
 		setGame,
 		setPlayers,
+		setPredictions,
+		setMarks,
 		setDemoMode,
 	} = useGameStore();
 
@@ -502,6 +504,8 @@ export default function HomeScreen() {
 			const { demoGameId, game, players } = buildDemoState(uid, demoNickname.trim(), numBots);
 			setGame(game);
 			setPlayers(players);
+			setPredictions([]);
+			setMarks([]);
 			setDemoMode(true);
 			upsertMembership({ gameId: demoGameId, playerId: uid, nickname: demoNickname.trim(), isHost: true });
 			setShowDemoEntry(false);
