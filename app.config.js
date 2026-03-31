@@ -15,7 +15,7 @@ export default {
     ios: {
       supportsTablet: false,
       bundleIdentifier: 'com.bingoo.app',
-      buildNumber: '9',
+      buildNumber: '10',
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
         NSUserNotificationsUsageDescription: 'bingoo notifies you when a prediction comes true, the game starts, or someone wins.',
@@ -23,7 +23,7 @@ export default {
     },
     android: {
       package: 'com.bingoo.app',
-      versionCode: 5,
+      versionCode: 6,
       adaptiveIcon: {
         backgroundColor: '#6C3CE2',
         foregroundImage: './assets/android-icon-foreground.png',
