@@ -8,26 +8,26 @@ export const DEMO_GAME_NAME = 'Demo Game';
 // With host at index 0 and bots at 1…N, all subjects end up with exactly 2 predictions.
 // Pool is indexed by (botIndex*2 + j) so every prediction gets a unique text (up to 9 bots).
 const PREDICTION_POOL: string[] = [
-  'is always the loudest in the room',   // unused (index 0 = host slot)
-  'has a strong opinion about everything', // unused (index 1 = host slot)
-  'will claim they knew all along',
-  'arrives exactly on time — never early',
-  'gets way too competitive',
-  'always has a better idea',
-  'will make everyone laugh at least once',
-  "says 'that's not what I meant'",
-  'forgets what they were saying mid-sentence',
-  'will sneak a snack',
-  'has a conspiracy theory ready',
-  'takes something personally',
-  'will quote something totally obscure',
-  'never admits when they are lost',
-  'will suggest a completely different plan',
-  'checks their phone when nobody is looking',
-  'has an unusually specific opinion',
-  "will say 'I told you so'",
-  'talks with their hands',
-  'gets distracted by the smallest thing',
+  'will oversleep',                        // unused (index 0 = host slot)
+  'will spill something',                  // unused (index 1 = host slot)
+  'will show up late',
+  'will forget their phone',
+  'will trip or stumble',
+  'will send a typo',
+  'will miss a call',
+  'will burn their food',
+  'will lose their keys',
+  'will cancel last minute',
+  'will be the last to leave',
+  'will change their mind',
+  'will laugh at their own joke',
+  'will get lost',
+  'will run into someone they know',
+  'will impulse buy something',
+  "will forget someone's name",
+  'will stay up past midnight',
+  'will take a wrong turn',
+  'will complain about the weather',
 ];
 
 // Up to 9 bots; first N are used based on numBots
