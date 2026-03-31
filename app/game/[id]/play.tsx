@@ -454,6 +454,9 @@ export default function PlayScreen() {
 					<TouchableOpacity style={styles.modalCard} activeOpacity={1}>
 						{selectedPred && (
 							<>
+								<Text style={styles.modalPredText}>
+									{getPredictionText(selectedPredId!)}
+								</Text>
 								{!selectedIsMarked && (
 									<TouchableOpacity
 										style={styles.markButton}
