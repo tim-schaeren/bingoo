@@ -704,7 +704,7 @@ export default function HomeScreen() {
 									placeholderTextColor={colors.textLight}
 									value={nickname}
 									onChangeText={setNickname}
-									maxLength={20}
+									maxLength={10}
 									returnKeyType="done"
 									onFocus={() => scrollToAnchor('createNickname')}
 								/>
@@ -781,7 +781,7 @@ export default function HomeScreen() {
 									placeholderTextColor={colors.textLight}
 									value={nickname}
 									onChangeText={setNickname}
-									maxLength={20}
+									maxLength={10}
 									autoFocus
 									returnKeyType="next"
 									onFocus={() => scrollToAnchor('joinNickname')}
@@ -1014,7 +1014,7 @@ export default function HomeScreen() {
 							placeholderTextColor={colors.textLight}
 							value={demoNickname}
 							onChangeText={setDemoNickname}
-							maxLength={20}
+							maxLength={10}
 							autoFocus
 							returnKeyType="done"
 							onSubmitEditing={handleStartDemo}

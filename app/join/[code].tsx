@@ -122,7 +122,7 @@ export default function JoinByLinkScreen() {
 						placeholderTextColor={colors.textLight}
 						value={nickname}
 						onChangeText={setNickname}
-						maxLength={20}
+						maxLength={10}
 						autoFocus
 						returnKeyType="join"
 						onSubmitEditing={handleJoin}

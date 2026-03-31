@@ -32,8 +32,8 @@ const PREDICTION_POOL: string[] = [
 
 // Up to 9 bots; first N are used based on numBots
 const CHARACTER_NAMES = [
-  'Mickey Mouse', 'Donald Duck', 'Elsa', 'Simba',
-  'Moana', 'Buzz Lightyear', 'Woody', 'Ariel', 'Mulan',
+  'Mickey', 'Donald', 'Elsa', 'Simba',
+  'Moana', 'Buzz', 'Woody', 'Ariel', 'Mulan',
 ] as const;
 
 export interface DemoState {
