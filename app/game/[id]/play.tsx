@@ -91,6 +91,8 @@ export default function PlayScreen() {
 
 	const gridSize = game?.gridSize ?? 4;
 	const cellSize = (SCREEN_WIDTH - GRID_PADDING) / gridSize - spacing.xs;
+	const cellHeight = cellSize * 1.3;
+	const cellFontSize = Math.max(11, Math.round(cellSize * 0.18));
 
 	useEffect(() => {
 		if (!gameId) return;
@@ -369,7 +371,7 @@ export default function PlayScreen() {
 									key={predictionId}
 									style={[
 										styles.cell,
-										{ width: cellSize, height: cellSize },
+										{ width: cellSize, height: cellHeight },
 										isMarked && styles.cellMarked,
 										isWinCell && styles.cellWin,
 									]}
@@ -382,12 +384,10 @@ export default function PlayScreen() {
 									<Text
 										style={[
 											styles.cellText,
+											{ fontSize: cellFontSize },
 											isMarked && styles.cellTextMarked,
 											isWinCell && styles.cellTextWin,
 										]}
-										numberOfLines={5}
-										adjustsFontSizeToFit
-										minimumFontScale={0.5}
 									>
 										{getPredictionText(predictionId)}
 									</Text>
@@ -584,7 +584,7 @@ export default function PlayScreen() {
 								key={predictionId}
 								style={[
 									styles.cell,
-									{ width: cellSize, height: cellSize },
+									{ width: cellSize, height: cellHeight },
 									isMarked && styles.cellMarked,
 									isWinCell && styles.cellWin,
 								]}
@@ -592,12 +592,10 @@ export default function PlayScreen() {
 								<Text
 									style={[
 										styles.cellText,
+										{ fontSize: cellFontSize },
 										isMarked && styles.cellTextMarked,
 										isWinCell && styles.cellTextWin,
 									]}
-									numberOfLines={5}
-									adjustsFontSizeToFit
-									minimumFontScale={0.5}
 								>
 									{getPredictionText(predictionId)}
 								</Text>
@@ -681,7 +679,6 @@ const styles = StyleSheet.create({
 		borderColor: colors.secondary,
 	},
 	cellText: {
-		fontSize: 17,
 		fontWeight: '700',
 		color: colors.text,
 		textAlign: 'center',
