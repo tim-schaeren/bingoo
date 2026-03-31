@@ -125,7 +125,7 @@ export const useGameStore = create<GameState>()(
       appendPredictions: (preds) => set((state) => ({ predictions: [...state.predictions, ...preds] })),
       setMarks: (marks) => set({ marks }),
       setMyCard: (myCard) => set({ myCard }),
-      setDemoMode: (v) => set({ isDemoMode: v }),
+      setDemoMode: (v) => set(v ? { isDemoMode: true } : { isDemoMode: false, ...emptyLiveState }),
     }),
     {
       name: 'bingoo-session',
