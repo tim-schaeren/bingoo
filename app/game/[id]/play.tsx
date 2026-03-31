@@ -59,6 +59,7 @@ export default function PlayScreen() {
 	const removeMembership = useGameStore((s) => s.removeMembership);
 	const setCurrentGame = useGameStore((s) => s.setCurrentGame);
 	const isDemoMode = useGameStore((s) => s.isDemoMode);
+	const setDemoMode = useGameStore((s) => s.setDemoMode);
 	const actions = useGameActions(gameId);
 
 	const game = useGameStore((s) => s.game);
@@ -352,7 +353,10 @@ export default function PlayScreen() {
 						<BrandWordmark style={styles.title} />
 					</View>
 					<TouchableOpacity
-						onPress={() => router.replace('/')}
+						onPress={() => {
+							if (isDemoMode) { setDemoMode(false); if (gameId) removeMembership(gameId); }
+							router.replace('/');
+						}}
 						style={styles.homeButton}
 					>
 						<Text style={styles.homeButtonText}>home</Text>

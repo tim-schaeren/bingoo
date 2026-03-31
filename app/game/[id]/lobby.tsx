@@ -561,7 +561,10 @@ export default function LobbyScreen() {
 					{/* Header */}
 					<View style={styles.header}>
 						<TouchableOpacity
-							onPress={() => router.replace('/')}
+							onPress={() => {
+								if (isDemoMode) { setDemoMode(false); removeMembership(gameId!); }
+								router.replace('/');
+							}}
 							style={styles.homeButton}
 						>
 							<Text style={styles.homeButtonText}>home</Text>
