@@ -21,16 +21,12 @@ import {
 	listenToMarks,
 	listenToPlayers,
 	listenToPredictions,
-	markPrediction,
-	announceWinner,
 	getCard,
-	banPlayerFromGame,
-	reportPrediction,
 	type Prediction,
 	type Player,
 	type ReportReason,
-	type Mark,
 } from '../../../lib/firestore';
+import { useGameActions } from '../../../hooks/useGameActions';
 import { getWinningLine } from '../../../lib/gameLogic';
 import { useGameStore } from '../../../store/gameStore';
 import { sendPushNotifications } from '../../../lib/notifications';
@@ -63,6 +59,7 @@ export default function PlayScreen() {
 	const removeMembership = useGameStore((s) => s.removeMembership);
 	const setCurrentGame = useGameStore((s) => s.setCurrentGame);
 	const isDemoMode = useGameStore((s) => s.isDemoMode);
+	const actions = useGameActions(gameId);
 
 	const game = useGameStore((s) => s.game);
 	const marks = useGameStore((s) => s.marks);
@@ -192,8 +189,8 @@ export default function PlayScreen() {
 			announcedWinners.current.add(playerId);
 			setWinningLine(line);
 			feedbackWin();
-			setTimeout(() => {
-				setGame({ ...game, status: 'finished', winners: [{ id: playerId, nickname }] });
+			setTimeout(async () => {
+				await actions.announceWinner(playerId, nickname);
 				router.replace(`/game/${gameId}/winner`);
 			}, 1500);
 			return;
@@ -212,7 +209,7 @@ export default function PlayScreen() {
 			}
 			const winner = players.find((p) => p.id === pid);
 			const winnerNickname = winner?.nickname ?? 'Someone';
-			announceWinner(gameId, pid, winnerNickname)
+			actions.announceWinner(pid, winnerNickname)
 				.then(() => {
 					const tokens = players
 						.filter((p) => p.id !== pid)
@@ -264,20 +261,10 @@ export default function PlayScreen() {
 		if (!gameId || !playerId || !nickname) return;
 		feedbackMark();
 		setSelectedPredId(null);
-		if (isDemoMode) {
-			const { marks: current, setMarks: setM } = useGameStore.getState();
-			if (current.some((m) => m.predictionId === predictionId)) return;
-			setM([...current, {
-				predictionId,
-				markedBy: playerId,
-				markedByNickname: nickname,
-				markedAt: new Date() as any,
-			} as Mark]);
-			return;
-		}
 		const pred = getPrediction(predictionId);
-		markPrediction(gameId, predictionId, playerId, nickname)
+		actions.markPrediction(predictionId, playerId, nickname)
 			.then(() => {
+				if (isDemoMode) return;
 				const tokens = players
 					.filter((p) => p.id !== playerId && p.id !== pred?.subjectId)
 					.map((p) => p.pushToken);
@@ -295,15 +282,8 @@ export default function PlayScreen() {
 
 	const handleReportSelectedPrediction = async (reason: ReportReason) => {
 		if (!gameId || !playerId || !reportingPrediction) return;
-		if (isDemoMode) {
-			// Demo: fake success without hitting Firestore
-			setShowReportModal(false);
-			setReportingPrediction(null);
-			Alert.alert('Reported', 'Thanks. We will review it.');
-			return;
-		}
 		try {
-			await reportPrediction(gameId, reportingPrediction.id, playerId, reason);
+			await actions.reportPrediction(reportingPrediction.id, playerId, reason);
 			Alert.alert('Reported', 'Thanks. We will review it.');
 		} catch {
 			Alert.alert('Error', 'Could not send the report. Try again.');
@@ -324,15 +304,8 @@ export default function PlayScreen() {
 					text: 'Remove',
 					style: 'destructive',
 					onPress: async () => {
-						if (isDemoMode) {
-							// Demo: remove bot + their predictions from store locally
-							const s = useGameStore.getState();
-							s.setPlayers(s.players.filter((p) => p.id !== player.id));
-							s.setPredictions(s.predictions.filter((p) => p.authorId !== player.id && p.subjectId !== player.id));
-							return;
-						}
 						try {
-							await banPlayerFromGame(gameId, player.id, false);
+							await actions.banPlayer(player, false);
 						} catch (error) {
 							const message =
 								error instanceof Error

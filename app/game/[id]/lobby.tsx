@@ -20,18 +20,7 @@ import {
 	listenToGame,
 	listenToPlayers,
 	listenToPredictions,
-	addPrediction,
-	deletePrediction,
-	markPlayerDone,
-	markPlayerWriting,
-	startGame,
-	cancelGame,
-	leaveGame,
-	banPlayerFromGame,
 	isInsufficientPredictionsError,
-	reportPlayer,
-	reportPrediction,
-	setReaction,
 	type ReactionEmoji,
 	type Prediction,
 	type Player,
@@ -42,11 +31,9 @@ import {
 	getMinVisiblePredictions,
 	MIN_CARD_CELLS,
 	REQUIRED_PREDICTIONS_PER_PLAYER,
-	generateId,
-	computeGridSize,
-	generateCards,
 } from '../../../lib/gameLogic';
 import { buildBotPredictions } from '../../../lib/demo';
+import { useGameActions } from '../../../hooks/useGameActions';
 import { useGameStore } from '../../../store/gameStore';
 import { sendPushNotifications } from '../../../lib/notifications';
 import { feedbackDone, feedbackStart } from '../../../lib/feedback';
@@ -80,9 +67,8 @@ export default function LobbyScreen() {
 	const removeMembership = useGameStore((s) => s.removeMembership);
 	const setCurrentGame = useGameStore((s) => s.setCurrentGame);
 	const isDemoMode = useGameStore((s) => s.isDemoMode);
-	const appendPredictions = useGameStore((s) => s.appendPredictions);
 	const setDemoMode = useGameStore((s) => s.setDemoMode);
-	const setMyCard = useGameStore((s) => s.setMyCard);
+	const actions = useGameActions(gameId);
 
 	const game = useGameStore((s) => s.game);
 	const players = useGameStore((s) => s.players);
@@ -260,14 +246,11 @@ export default function LobbyScreen() {
 		if (submitted || autoSubmittedRef.current || editingRef.current) return;
 		autoSubmittedRef.current = true;
 		feedbackDone();
-		if (isDemoMode) {
-			const { players: current, setPlayers: setP } = useGameStore.getState();
-			setP(current.map((p) => p.id === playerId ? { ...p, predictionsSubmitted: true } : p));
-			return;
-		}
-		markPlayerDone(gameId!, playerId!).catch(() => {
+		// actions omitted from deps — isDemoMode is stable for the lifetime of a game session
+		actions.markPlayerDone(playerId!).catch(() => {
 			autoSubmittedRef.current = false;
 		});
+	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [allSubjectsFull, submitted]);
 
 	// Bot submission timers (demo mode only)
@@ -310,36 +293,15 @@ export default function LobbyScreen() {
 		const globalCount = globalCountBySubject.get(selectedSubjectId) ?? 0;
 		if (globalCount >= REQUIRED_PREDICTIONS_PER_PLAYER) return;
 
-		if (isDemoMode) {
-			appendPredictions([{
-				id: generateId(),
-				authorId: playerId,
-				subjectId: selectedSubjectId,
-				text: predText.trim(),
-				createdAt: new Date() as any,
-			} as Prediction]);
+		setAdding(true);
+		try {
+			await actions.addPrediction(playerId, selectedSubjectId, predText.trim());
 			setPredText('');
 			if (globalCount + 1 >= REQUIRED_PREDICTIONS_PER_PLAYER) {
 				const next = otherPlayers.find(
 					(p) =>
 						p.id !== selectedSubjectId &&
 						(globalCountBySubject.get(p.id) ?? 0) < REQUIRED_PREDICTIONS_PER_PLAYER,
-				);
-				if (next) setSelectedSubjectId(next.id);
-			}
-			inputRef.current?.focus();
-			return;
-		}
-		setAdding(true);
-		try {
-			await addPrediction(gameId, playerId, selectedSubjectId, predText.trim());
-			setPredText('');
-			if (globalCount + 1 >= REQUIRED_PREDICTIONS_PER_PLAYER) {
-				const next = otherPlayers.find(
-					(p) =>
-						p.id !== selectedSubjectId &&
-						(globalCountBySubject.get(p.id) ?? 0) <
-							REQUIRED_PREDICTIONS_PER_PLAYER,
 				);
 				if (next) setSelectedSubjectId(next.id);
 			}
@@ -355,12 +317,8 @@ export default function LobbyScreen() {
 		if (!playerId || !gameId) return;
 		editingRef.current = true;
 		autoSubmittedRef.current = false;
-		if (isDemoMode) {
-			setPlayers(players.map((p) => p.id === playerId ? { ...p, predictionsSubmitted: false } : p));
-			return;
-		}
 		try {
-			await markPlayerWriting(gameId, playerId);
+			await actions.markPlayerWriting(playerId);
 		} catch {
 			Alert.alert('Error', 'Could not update. Try again.');
 		}
@@ -371,12 +329,8 @@ export default function LobbyScreen() {
 		editingRef.current = false;
 		autoSubmittedRef.current = true;
 		feedbackDone();
-		if (isDemoMode) {
-			setPlayers(players.map((p) => p.id === playerId ? { ...p, predictionsSubmitted: true } : p));
-			return;
-		}
 		try {
-			await markPlayerDone(gameId, playerId);
+			await actions.markPlayerDone(playerId);
 		} catch {
 			autoSubmittedRef.current = false;
 			Alert.alert('Error', 'Could not submit. Try again.');
@@ -397,43 +351,18 @@ export default function LobbyScreen() {
 			).find(([, uids]) => uids.includes(playerId))?.[0] ?? null;
 		const next = current === emoji ? null : emoji;
 		setReactionPickerFor(null);
-		if (isDemoMode) {
-			setPredictions(predictions.map((p) => {
-				if (p.id !== prediction.id) return p;
-				const reactions = { ...(p.reactions ?? {}) } as Record<ReactionEmoji, string[]>;
-				if (current) {
-					const filtered = (reactions[current] ?? []).filter((uid) => uid !== playerId);
-					if (filtered.length === 0) delete reactions[current];
-					else reactions[current] = filtered;
-				}
-				if (next) reactions[next] = [...(reactions[next] ?? []), playerId];
-				return { ...p, reactions };
-			}));
-			return;
-		}
-		await setReaction(gameId, prediction.id, playerId, next, current);
+		await actions.setReaction(prediction.id, playerId, next, current);
 	};
 
 	const handleDeletePrediction = (predictionId: string) => {
 		if (!gameId) return;
-		if (isDemoMode) {
-			Alert.alert('Remove prediction', 'Delete this from the pool?', [
-				{ text: 'Cancel', style: 'cancel' },
-				{
-					text: 'Delete',
-					style: 'destructive',
-					onPress: () => setPredictions(predictions.filter((p) => p.id !== predictionId)),
-				},
-			]);
-			return;
-		}
 		Alert.alert('Remove prediction', 'Delete this from the pool?', [
 			{ text: 'Cancel', style: 'cancel' },
 			{
 				text: 'Delete',
 				style: 'destructive',
 				onPress: () =>
-					deletePrediction(gameId, predictionId).catch(() => {
+					actions.deletePrediction(predictionId).catch(() => {
 						Alert.alert('Error', 'Could not delete. Try again.');
 					}),
 			},
@@ -450,23 +379,11 @@ export default function LobbyScreen() {
 
 	const handleSubmitReport = async (reason: ReportReason) => {
 		if (!gameId || !playerId) return;
-		if (isDemoMode) {
-			// Demo: fake success without hitting Firestore
-			setReportingPrediction(null);
-			setReportingPlayer(null);
-			Alert.alert('Reported', 'Thanks. We will review it.');
-			return;
-		}
 		try {
 			if (reportingPrediction) {
-				await reportPrediction(
-					gameId,
-					reportingPrediction.id,
-					playerId,
-					reason,
-				);
+				await actions.reportPrediction(reportingPrediction.id, playerId, reason);
 			} else if (reportingPlayer) {
-				await reportPlayer(gameId, reportingPlayer.id, playerId, reason);
+				await actions.reportPlayer(reportingPlayer.id, playerId, reason);
 			} else {
 				return;
 			}
@@ -490,15 +407,8 @@ export default function LobbyScreen() {
 					text: 'Remove',
 					style: 'destructive',
 					onPress: async () => {
-						if (isDemoMode) {
-							// Demo: remove bot + their predictions from store locally
-							const s = useGameStore.getState();
-							s.setPlayers(s.players.filter((p) => p.id !== player.id));
-							s.setPredictions(s.predictions.filter((p) => p.authorId !== player.id && p.subjectId !== player.id));
-							return;
-						}
 						try {
-							await banPlayerFromGame(gameId, player.id, true);
+							await actions.banPlayer(player, true);
 						} catch (error) {
 							const message =
 								error instanceof Error
@@ -544,27 +454,19 @@ export default function LobbyScreen() {
 	};
 
 	const doStartGame = async () => {
-		if (!gameId) return;
+		if (!gameId || !playerId) return;
 		feedbackStart();
 		setStarting(true);
 		try {
+			await actions.startGame(players, predictions, playerId);
 			if (isDemoMode) {
-				const gridSize = computeGridSize(players, predictions);
-				const cards = generateCards(players, predictions, gridSize);
-				setMyCard(playerId ? cards[playerId] ?? null : null);
-				setGame({ ...game!, status: 'active', gridSize });
 				router.replace(`/game/${gameId}/play`);
 				return;
 			}
-			await startGame(gameId, players, predictions);
 			const tokens = players
 				.filter((p) => p.id !== playerId)
 				.map((p) => p.pushToken);
-			sendPushNotifications(
-				tokens,
-				'game started! 🎰',
-				'Check your bingoo card.',
-			);
+			sendPushNotifications(tokens, 'game started! 🎰', 'Check your bingoo card.');
 		} catch (error) {
 			if (isInsufficientPredictionsError(error)) {
 				Alert.alert('Not enough predictions', error.message);
@@ -592,7 +494,7 @@ export default function LobbyScreen() {
 					style: 'destructive',
 					onPress: async () => {
 						try {
-							await cancelGame(gameId!);
+							await actions.cancelGame();
 							router.replace('/');
 						} catch {
 							Alert.alert('Error', 'Could not cancel the game. Try again.');
@@ -618,7 +520,7 @@ export default function LobbyScreen() {
 				onPress: async () => {
 					isLeavingRef.current = true;
 					try {
-						await leaveGame(gameId!, playerId!);
+						await actions.leaveGame(playerId!);
 						removeMembership(gameId!);
 						router.replace('/');
 					} catch {
