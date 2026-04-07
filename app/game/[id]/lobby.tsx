@@ -555,7 +555,7 @@ export default function LobbyScreen() {
 				behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
 			>
 				<ScrollView
-					contentContainerStyle={styles.container}
+					contentContainerStyle={[styles.container, submitted && { paddingBottom: 220 }]}
 					keyboardShouldPersistTaps="handled"
 				>
 					{/* Header */}
@@ -642,8 +642,9 @@ export default function LobbyScreen() {
 							<View style={styles.inputRow}>
 								<View style={styles.bubbleInputWrap}>
 									<TouchableOpacity
-										style={styles.subjectBubble}
+										style={[styles.subjectBubble, allSubjectsFull && styles.addButtonDisabled]}
 										onPress={() => setShowSubjectPicker(true)}
+										disabled={allSubjectsFull}
 									>
 										<Text style={styles.subjectBubbleText} numberOfLines={1}>
 											{selectedSubject?.nickname ?? '…'} ▾
@@ -685,43 +686,56 @@ export default function LobbyScreen() {
 								</TouchableOpacity>
 							)}
 						</View>
-					) : (
-						<View style={styles.waitingBox}>
-							<Text style={styles.waitingTitle}>Predictions submitted!</Text>
-							<Text style={styles.waitingText}>
-								{!hasEnoughPredictionsToStart
-									? `The lobby changed, so there are not enough predictions to start. Each player needs at least ${MIN_CARD_CELLS} visible predictions and enough predictions written about them.`
-									: allSubmitted
-										? isHost
-											? 'Everyone is ready. You can start the game.'
-											: 'Everyone is ready. Waiting for the host to start…'
-										: 'Waiting for others to finish writing…'}
-							</Text>
-							{isHost && (
-								<TouchableOpacity
-									style={[
-										styles.startButton,
-										(starting || !hasEnoughPredictionsToStart) &&
-											styles.buttonDisabled,
-									]}
-									onPress={handleStartGame}
-									disabled={starting || !hasEnoughPredictionsToStart}
-								>
-									<Text style={styles.startButtonText}>
-										{starting ? 'Starting…' : 'Start game'}
-									</Text>
-								</TouchableOpacity>
-							)}
-							<TouchableOpacity
-								onPress={handleKeepWriting}
-								style={styles.keepWritingButton}
-							>
-								<Text style={styles.keepWritingText}>Edit my predictions</Text>
-							</TouchableOpacity>
-						</View>
+					) : null}
+
+					{!submitted && (
+						<TouchableOpacity
+							style={styles.quitButton}
+							onPress={isHost ? handleCancel : handleLeave}
+						>
+							<Text style={styles.quitButtonText}>{isHost ? 'cancel' : 'leave'}</Text>
+						</TouchableOpacity>
 					)}
 				</ScrollView>
 			</KeyboardAvoidingView>
+
+			{submitted && (
+				<View style={styles.waitingOverlay}>
+					<View style={styles.waitingBox}>
+						<Text style={styles.waitingTitle}>Predictions submitted!</Text>
+						<Text style={styles.waitingText}>
+							{!hasEnoughPredictionsToStart
+								? `The lobby changed, so there are not enough predictions to start. Each player needs at least ${MIN_CARD_CELLS} visible predictions and enough predictions written about them.`
+								: allSubmitted
+									? isHost
+										? 'Everyone is ready. You can start the game.'
+										: 'Everyone is ready. Waiting for the host to start…'
+									: 'Waiting for others to finish writing…'}
+						</Text>
+						{isHost && (
+							<TouchableOpacity
+								style={[
+									styles.startButton,
+									(starting || !hasEnoughPredictionsToStart) &&
+										styles.buttonDisabled,
+								]}
+								onPress={handleStartGame}
+								disabled={starting || !hasEnoughPredictionsToStart}
+							>
+								<Text style={styles.startButtonText}>
+									{starting ? 'Starting…' : 'Start game'}
+								</Text>
+							</TouchableOpacity>
+						)}
+						<TouchableOpacity
+							onPress={handleKeepWriting}
+							style={styles.keepWritingButton}
+						>
+							<Text style={styles.keepWritingText}>Edit my predictions</Text>
+						</TouchableOpacity>
+					</View>
+				</View>
+			)}
 
 			<SubjectPickerModal
 				visible={showSubjectPicker}
@@ -806,13 +820,6 @@ export default function LobbyScreen() {
 				}
 			/>
 
-			{/* Fixed bottom quit/leave */}
-			<TouchableOpacity
-				style={styles.quitButton}
-				onPress={isHost ? handleCancel : handleLeave}
-			>
-				<Text style={styles.quitButtonText}>{isHost ? 'cancel' : 'leave'}</Text>
-			</TouchableOpacity>
 		</SafeAreaView>
 	);
 }
@@ -915,14 +922,28 @@ const styles = StyleSheet.create({
 	addButtonDisabled: { opacity: 0.4 },
 	addButtonText: { color: '#fff', fontWeight: '700', fontSize: fontSize.sm },
 
+	waitingOverlay: {
+		position: 'absolute',
+		bottom: 0,
+		left: 0,
+		right: 0,
+		zIndex: 10,
+	},
 	waitingBox: {
 		backgroundColor: colors.surface,
-		borderRadius: radius.lg,
+		borderTopLeftRadius: radius.lg,
+		borderTopRightRadius: radius.lg,
 		padding: spacing.lg,
 		gap: spacing.md,
 		alignItems: 'center',
 		borderWidth: 1,
+		borderBottomWidth: 0,
 		borderColor: colors.border,
+		shadowColor: '#000',
+		shadowOffset: { width: 0, height: -2 },
+		shadowOpacity: 0.08,
+		shadowRadius: 12,
+		elevation: 8,
 	},
 	waitingTitle: {
 		fontSize: fontSize.lg,
@@ -1014,8 +1035,6 @@ const styles = StyleSheet.create({
 		backgroundColor: '#FDECEC',
 		alignItems: 'center',
 		justifyContent: 'center',
-		borderTopWidth: 1,
-		borderTopColor: 'transparent',
 	},
 	quitButtonText: {
 		color: colors.error,
