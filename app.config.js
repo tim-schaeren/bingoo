@@ -2,7 +2,7 @@ export default {
   expo: {
     name: 'bingoo',
     slug: 'bingoo',
-    version: '1.0.2',
+    version: '1.1.0',
     orientation: 'portrait',
     icon: './assets/icon.png',
     scheme: 'bingoo',
@@ -15,7 +15,7 @@ export default {
     ios: {
       supportsTablet: false,
       bundleIdentifier: 'com.bingoo.app',
-      buildNumber: '11',
+      buildNumber: '12',
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
         NSUserNotificationsUsageDescription: 'bingoo notifies you when a prediction comes true, the game starts, or someone wins.',
@@ -23,7 +23,7 @@ export default {
     },
     android: {
       package: 'com.bingoo.app',
-      versionCode: 7,
+      versionCode: 8,
       adaptiveIcon: {
         backgroundColor: '#6C3CE2',
         foregroundImage: './assets/android-icon-foreground.png',
