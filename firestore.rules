@@ -21,6 +21,9 @@ service cloud.firestore {
     function predictionData(gameId, predictionId) {
       return get(/databases/$(database)/documents/games/$(gameId)/predictions/$(predictionId)).data;
     }
+    function hostNicknameMatchesPlayer(gameId, nickname) {
+      return getAfter(/databases/$(database)/documents/games/$(gameId)/players/$(request.auth.uid)).data.nickname == nickname;
+    }
 
     // ─── Games ─────────────────────────────────────────────────────────────────
 
@@ -39,6 +42,9 @@ service cloud.firestore {
         && request.resource.data.name.size() <= 32
         && request.resource.data.status == 'lobby'
         && request.resource.data.gridSize == 0
+        && request.resource.data.hostNickname is string
+        && request.resource.data.hostNickname.size() > 0
+        && request.resource.data.hostNickname.size() <= 20
         && request.resource.data.winners == [];
 
       allow update: if
@@ -48,17 +54,34 @@ service cloud.firestore {
           (
             isHost(gameId)
             && resource.data.status == 'lobby'
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'gridSize'])
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'gridSize', 'playerCount'])
             && request.resource.data.status == 'active'
             && request.resource.data.gridSize >= 2
             && request.resource.data.gridSize <= 5
           )
           || (
+            // Add winners without finishing (place 1 or 2 awarded, game continues)
+            isPlayer(gameId)
+            && resource.data.status == 'active'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['winners'])
+            && request.resource.data.winners.size() > resource.data.winners.size()
+          )
+          || (
+            // Add winners and finish game (place 3 or early finish)
             isPlayer(gameId)
             && (resource.data.status == 'active' || resource.data.status == 'finished')
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'winners'])
             && request.resource.data.status == 'finished'
-            && request.resource.data.winners.size() >= resource.data.winners.size()
+            && request.resource.data.winners.size() > resource.data.winners.size()
+          )
+          || (
+            isHost(gameId)
+            && resource.data.status == 'lobby'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hostNickname'])
+            && request.resource.data.hostNickname is string
+            && request.resource.data.hostNickname.size() > 0
+            && request.resource.data.hostNickname.size() <= 20
+            && hostNicknameMatchesPlayer(gameId, request.resource.data.hostNickname)
           )
           || (
             isHost(gameId)
@@ -71,7 +94,6 @@ service cloud.firestore {
       allow delete: if false;
 
       // ─── Players ─────────────────────────────────────────────────────────────
-
       match /players/{playerId} {
         allow read: if
           request.auth != null
@@ -93,6 +115,12 @@ service cloud.firestore {
             // Player updates their own push token (any game state)
             (request.auth.uid == playerId
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pushToken']))
+            // Player updates their own nickname (lobby only)
+            || (request.auth.uid == playerId
+              && isLobby(gameId)
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname'])
+              && request.resource.data.nickname.size() > 0
+              && request.resource.data.nickname.size() <= 20)
             // Player submits/retracts their own predictions (lobby only)
             || (isLobby(gameId)
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['predictionsSubmitted'])

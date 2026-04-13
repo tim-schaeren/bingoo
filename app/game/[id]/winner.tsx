@@ -8,6 +8,8 @@ import {
 	ScrollView,
 	ActivityIndicator,
 	Modal,
+	Alert,
+	RefreshControl,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,9 +22,13 @@ import {
 	listenToMarks,
 	listenToPlayers,
 	listenToPredictions,
+	fetchGame,
+	fetchMarks,
+	fetchPlayers,
+	fetchPredictions,
 	getCard,
 } from '../../../lib/firestore';
-import { getWinningLine } from '../../../lib/gameLogic';
+import { getWinningLine, formatPlaceLabel } from '../../../lib/gameLogic';
 import { useGameStore } from '../../../store/gameStore';
 import { Ionicons } from '@expo/vector-icons';
 import { BrandWordmark } from '../../../components/BrandWordmark';
@@ -33,6 +39,7 @@ const GRID_PADDING = spacing.lg * 2;
 interface WinnerCard {
 	id: string;
 	nickname: string;
+	place: 1 | 2 | 3;
 	grid: string[];
 }
 
@@ -63,6 +70,7 @@ export default function WinnerScreen() {
 	const [showOwnCard, setShowOwnCard] = useState(false);
 	const [ownCard, setOwnCard] = useState<string[] | null>(null);
 	const [showHistory, setShowHistory] = useState(false);
+	const [refreshing, setRefreshing] = useState(false);
 	const carouselRef = useRef<ScrollView>(null);
 	const cardRef = useRef<View>(null);
 
@@ -94,8 +102,11 @@ export default function WinnerScreen() {
 			return;
 		}
 
-		// Sort so current player's card comes first
+		// Sort by place, then current player's card first within same place
 		const sorted = [...winners].sort((a, b) => {
+			const pa = a.place ?? 1;
+			const pb = b.place ?? 1;
+			if (pa !== pb) return pa - pb;
 			if (a.id === playerId) return -1;
 			if (b.id === playerId) return 1;
 			return 0;
@@ -121,6 +132,55 @@ export default function WinnerScreen() {
 			if (grid) setOwnCard(grid);
 		});
 	}, [gameId, playerId]);
+
+	const handleRefresh = async () => {
+		if (!gameId || isDemoMode) return;
+		setRefreshing(true);
+		try {
+			const [nextGame, nextMarks, nextPlayers, nextPredictions] = await Promise.all([
+				fetchGame(gameId, true),
+				fetchMarks(gameId, true),
+				fetchPlayers(gameId, true),
+				fetchPredictions(gameId, true),
+			]);
+			if (!nextGame) {
+				removeMembership(gameId);
+				router.replace('/');
+				return;
+			}
+			setGame(nextGame);
+			setMarks(nextMarks);
+			setPlayers(nextPlayers);
+			setPredictions(nextPredictions);
+			if (playerId) {
+				const nextOwnCard = await getCard(gameId, playerId, true);
+				setOwnCard(nextOwnCard);
+			}
+			const sorted = [...(nextGame.winners ?? [])].sort((a, b) => {
+				const pa = a.place ?? 1;
+				const pb = b.place ?? 1;
+				if (pa !== pb) return pa - pb;
+				if (a.id === playerId) return -1;
+				if (b.id === playerId) return 1;
+				return 0;
+			});
+			const results = await Promise.all(
+				sorted.map((winner) =>
+					getCard(gameId, winner.id, true).then((grid) => (grid ? { ...winner, grid } : null)),
+				),
+			);
+			setWinnerCards(results.filter(Boolean) as WinnerCard[]);
+			if (nextGame.status === 'active') router.replace(`/game/${gameId}/play`);
+			if (nextGame.status === 'cancelled') {
+				removeMembership(gameId);
+				router.replace('/');
+			}
+		} catch {
+			Alert.alert('Refresh failed', 'Could not refresh the results right now. Try again.');
+		} finally {
+			setRefreshing(false);
+		}
+	};
 
 	const handleShare = async () => {
 		if (!cardRef.current) return;
@@ -158,7 +218,12 @@ export default function WinnerScreen() {
 	const showToggle = !(isMe && winners.length === 1);
 	const ownWinnerCard: WinnerCard | null =
 		ownCard && playerId
-			? { id: playerId, nickname: 'you', grid: ownCard }
+			? {
+					id: playerId,
+					nickname: 'you',
+					place: winners.find((w) => w.id === playerId)?.place ?? 1,
+					grid: ownCard,
+				}
 			: null;
 
 	const handlePlayAgain = () => {
@@ -178,11 +243,12 @@ export default function WinnerScreen() {
 	const renderCard = (wc: WinnerCard, isWinningCard = true) => {
 		const winLine = getWinningLine(wc.grid, markedIds, gridSize);
 		const isMyCard = wc.id === playerId;
+		const placeStr = formatPlaceLabel(wc.place ?? 1);
 		const label = isMyCard
 			? isWinningCard
-				? 'Your winning card'
+				? `Your card — ${placeStr} place`
 				: 'Your card'
-			: `their winning card`;
+			: `${wc.nickname} — ${placeStr} place`;
 
 		return (
 			<View
@@ -226,7 +292,12 @@ export default function WinnerScreen() {
 
 	return (
 		<SafeAreaView style={styles.safe}>
-			<ScrollView contentContainerStyle={styles.container}>
+			<ScrollView
+				contentContainerStyle={styles.container}
+				refreshControl={
+					<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+				}
+			>
 				<View style={styles.header}>
 					<TouchableOpacity style={styles.homeButton} onPress={handlePlayAgain}>
 						<Text style={styles.homeButtonText}>home</Text>
@@ -237,18 +308,41 @@ export default function WinnerScreen() {
 				<View style={styles.banner}>
 					<BrandWordmark style={styles.bingoo} suffix="!" />
 					<Text style={styles.winnerLabel}>
-						{isMe
-							? winners.length > 1
-								? `You tied with ${winners
-										.filter((w) => w.id !== playerId)
-										.map((w) => w.nickname)
-										.join(' & ')}!`
-								: 'You won!'
-							: winners.length === 1
-								? `${winners[0].nickname} won!`
-								: winners.map((w) => w.nickname).join(' & ') + ' tied!'}
+						{(() => {
+							const myWin = winners.find((w) => w.id === playerId);
+							if (myWin) {
+								const myPlace = myWin.place ?? 1;
+								const tied = winners.filter((w) => (w.place ?? 1) === myPlace && w.id !== playerId);
+								if (tied.length > 0) {
+									return `You tied ${formatPlaceLabel(myPlace)} with ${tied.map((w) => w.nickname).join(' & ')}!`;
+								}
+								return `You got ${formatPlaceLabel(myPlace)} place!`;
+							}
+							const first = winners.filter((w) => (w.place ?? 1) === 1);
+							if (first.length === 1) return `${first[0].nickname} won!`;
+							return first.map((w) => w.nickname).join(' & ') + ' tied!';
+						})()}
 					</Text>
 				</View>
+
+				{/* Podium */}
+				{(() => {
+					const byPlace = (p: 1 | 2 | 3) => winners.filter((w) => (w.place ?? 1) === p).map((w) => w.id === playerId ? 'You' : w.nickname).join(', ');
+					const PODIUM_COLORS = { 1: colors.secondary, 2: '#C0C0C0', 3: '#CD7F32' } as const;
+					const PODIUM_HEIGHTS = { 1: 64, 2: 48, 3: 36 } as const;
+					return (
+						<View style={styles.podium}>
+							{([2, 1, 3] as const).map((place) => (
+								<View key={place} style={styles.podiumCol}>
+									<Text style={styles.podiumNames} numberOfLines={2}>{byPlace(place)}</Text>
+									<View style={[styles.podiumBlock, { height: PODIUM_HEIGHTS[place], backgroundColor: byPlace(place) ? PODIUM_COLORS[place] : colors.border }]}>
+										<Text style={styles.podiumPlaceText}>{place}</Text>
+									</View>
+								</View>
+							))}
+						</View>
+					);
+				})()}
 
 				{/* Card(s) with overlapping share button */}
 				<View style={styles.cardWrapper}>
@@ -313,7 +407,7 @@ export default function WinnerScreen() {
 									!showOwnCard && styles.segmentTextActivePurple,
 								]}
 							>
-								{winners.length > 1 ? "winners' cards" : "winner's card"}
+								{"podium cards"}
 							</Text>
 						</TouchableOpacity>
 						<TouchableOpacity
@@ -388,6 +482,35 @@ const styles = StyleSheet.create({
 	container: { padding: spacing.lg, gap: spacing.md, alignItems: 'center' },
 
 	banner: { alignItems: 'center', gap: spacing.sm },
+	podium: {
+		flexDirection: 'row',
+		alignItems: 'flex-end',
+		justifyContent: 'center',
+		gap: spacing.xs,
+		width: '100%',
+	},
+	podiumCol: {
+		flex: 1,
+		alignItems: 'center',
+		gap: spacing.xs,
+	},
+	podiumNames: {
+		fontSize: fontSize.sm,
+		fontWeight: '600',
+		color: colors.text,
+		textAlign: 'center',
+	},
+	podiumBlock: {
+		width: '100%',
+		borderRadius: radius.sm,
+		alignItems: 'center',
+		justifyContent: 'center',
+	},
+	podiumPlaceText: {
+		color: '#fff',
+		fontWeight: '900',
+		fontSize: fontSize.md,
+	},
 	emoji: { fontSize: 64 },
 	winnerLabel: {
 		fontSize: fontSize.xl,

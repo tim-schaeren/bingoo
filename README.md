@@ -9,8 +9,8 @@ A social prediction bingo game for iOS and Android. Players create named private
 1. **Create** a named game and share the 6-character code with friends.
 2. **Everyone joins** the lobby and writes predictions about the other players (e.g. _"Tom will show up late"_). Predictions go into a shared pool — you never see predictions written about yourself.
 3. The **host starts** the game. Each player receives a unique, shuffled bingo card filled with predictions they can see.
-4. During the game, anyone can **mark a prediction as true** by tapping a cell and pressing "Mark as true". Marks are visible to everyone in real time (except for ones on predictions about themselves).
-5. The first player(s) to complete a full row, column, or diagonal win the game.
+4. During the game, anyone can **mark a prediction as true** by tapping a cell and confirming the action. Marks are visible to everyone in real time (except for ones on predictions about themselves).
+5. The game now awards a **podium**: 1st, 2nd, and 3rd place can all be awarded as rows, columns, or diagonals are completed. The game ends once 3rd place is awarded or every remaining player has placed.
 
 ---
 
@@ -47,6 +47,7 @@ bingoo/
 │   ├── ActionModal.tsx          # Reusable action sheet for report/remove actions
 │   ├── ErrorBoundary.tsx       # Catches render errors, shows "return home" button
 │   ├── OfflineBanner.tsx       # Floating banner shown when device has no connection
+│   ├── RenameModal.tsx         # Cross-platform nickname editor for the lobby
 │   ├── ReportModal.tsx         # Reason picker for reporting users/predictions
 │   └── lobby/                  # Sub-components extracted from lobby.tsx
 │       ├── PlayerList.tsx
@@ -92,7 +93,8 @@ games/{gameId}
   hostId          string       — Firebase Auth UID of the host
   hostNickname    string
   gridSize        number       — 0 until game starts; then 2–5
-  winners         array        — [{ id, nickname }, ...] (supports simultaneous winners)
+  playerCount     number       — snapshot of active players when the game starts
+  winners         array        — [{ id, nickname, place }, ...] (supports ties per place)
   createdAt       timestamp
 
   /players/{playerId}
@@ -137,7 +139,7 @@ games/{gameId}
 
 **Card generation** (`generateCards`): each player's card is a shuffled subset of the predictions they can see (all predictions not about them), truncated to `gridSize²` cells. Cards are written to Firestore by the host at game start and never change.
 
-**Win detection** (`getWinningLine`): runs client-side on every marks update. Checks all rows, columns, and both diagonals. When a player detects they've won, they call `announceWinner` which uses Firestore `arrayUnion` to append to the `winners` array — safe for concurrent winners. All game logic functions are covered by unit tests (`npm test`).
+**Win detection** (`getWinningLine`): runs client-side on every marks update. Checks all rows, columns, and both diagonals. When players detect wins, they call `announceWinners`, which assigns the next podium place (1st, 2nd, or 3rd), supports ties within that place, and finishes the game when the podium is filled or everyone has placed. All game logic functions are covered by unit tests (`npm test`).
 
 **Game codes** (`generateGameCode`): 6 characters from the alphabet `ABCDEFGHJKMNPQRSTUVWXYZ23456789` — ambiguous characters (0, O, I, 1, L) are excluded to avoid confusion when sharing verbally.
 
@@ -145,13 +147,13 @@ games/{gameId}
 
 ## Security rules (`firestore.rules`)
 
-- **Games**: lobby games are queryable for joining by code; active/finished games are readable only by members. New games must include a non-empty `name`. Only the host can start or cancel a lobby game. Members can append themselves to `winners` when the game is active/finished.
-- **Players**: readable only by members of the same game. Joining is allowed only in lobby and blocked if the player appears in `bannedPlayers`. Players can leave a lobby themselves; hosts can remove other players from a lobby or active game.
+- **Games**: lobby games are queryable for joining by code; active/finished games are readable only by members. New games must include a non-empty `name`. Only the host can start or cancel a lobby game. Members can append podium winners when the game is active/finished, and the host can update their synced `hostNickname` while still in lobby.
+- **Players**: readable only by members of the same game. Joining is allowed only in lobby and blocked if the player appears in `bannedPlayers`. Players can leave a lobby themselves and can update their own nickname while still in lobby. Hosts can remove players from a lobby or active game, and can ban players from rejoining a lobby.
 - **Predictions**: readable only by members. Authors can create in lobby only, and any member can add/remove reactions during lobby. Authors, subjects, or the host can delete a prediction in lobby.
 - **Cards**: readable only by members; writable only by the host during lobby before the game starts.
 - **Marks**: readable only by members; creatable only during active play, and a player cannot mark a prediction about themselves.
 - **Reports**: members can create report records for players or predictions; report documents are not readable from the client.
-- **Banned players**: hosts can ban removed players from rejoining the same game; the banned player and the host can read that ban record.
+- **Banned players**: hosts can ban players from rejoining the same lobby; the banned player and the host can read that ban record.
 
 ---
 

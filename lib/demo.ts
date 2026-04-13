@@ -71,6 +71,7 @@ export function buildDemoState(hostId: string, hostNickname: string, numBots: nu
     hostId,
     hostNickname,
     gridSize: 0,
+    playerCount: clampedBots + 1,
     winners: [],
     createdAt: new Date() as any,
   };

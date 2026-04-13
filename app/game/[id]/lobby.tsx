@@ -11,6 +11,7 @@ import {
 	ActivityIndicator,
 	KeyboardAvoidingView,
 	Platform,
+	RefreshControl,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -20,12 +21,17 @@ import {
 	listenToGame,
 	listenToPlayers,
 	listenToPredictions,
+	fetchGame,
+	fetchPlayers,
+	fetchPredictions,
 	isInsufficientPredictionsError,
 	type ReactionEmoji,
 	type Prediction,
 	type Player,
 	type ReportReason,
 	MAX_PREDICTION_LENGTH,
+	MAX_NICKNAME_LENGTH,
+	normalizeNickname,
 } from '../../../lib/firestore';
 import {
 	getMinVisiblePredictions,
@@ -44,6 +50,7 @@ import { SubjectPickerModal } from '../../../components/lobby/SubjectPickerModal
 import { WelcomeModal } from '../../../components/lobby/WelcomeModal';
 import { ReportModal } from '../../../components/ReportModal';
 import { ActionModal } from '../../../components/ActionModal';
+import { RenameModal } from '../../../components/RenameModal';
 
 const MIN_PLAYERS = 3;
 
@@ -92,7 +99,11 @@ export default function LobbyScreen() {
 		null,
 	);
 	const [actionPlayer, setActionPlayer] = useState<Player | null>(null);
+	const [showRenameModal, setShowRenameModal] = useState(false);
+	const [pendingNickname, setPendingNickname] = useState('');
+	const [savingNickname, setSavingNickname] = useState(false);
 	const [showPoolHint, setShowPoolHint] = useState(false);
+	const [refreshing, setRefreshing] = useState(false);
 
 	const hintKey = gameId ? `hint_pool_dismissed_${gameId}` : null;
 
@@ -173,6 +184,35 @@ export default function LobbyScreen() {
 	useEffect(() => {
 		if (gameId && !membership) router.replace('/');
 	}, [gameId, membership]);
+
+	const handleRefresh = async () => {
+		if (!gameId || isDemoMode) return;
+		setRefreshing(true);
+		try {
+			const [nextGame, nextPlayers, nextPredictions] = await Promise.all([
+				fetchGame(gameId, true),
+				fetchPlayers(gameId, true),
+				fetchPredictions(gameId, true),
+			]);
+			if (!nextGame) {
+				removeMembership(gameId);
+				router.replace('/');
+				return;
+			}
+			setGame(nextGame);
+			setPlayers(nextPlayers);
+			setPredictions(nextPredictions);
+			if (nextGame.status === 'active') router.replace(`/game/${gameId}/play`);
+			if (nextGame.status === 'cancelled') {
+				removeMembership(gameId);
+				router.replace('/');
+			}
+		} catch {
+			Alert.alert('Refresh failed', 'Could not refresh the lobby right now. Try again.');
+		} finally {
+			setRefreshing(false);
+		}
+	};
 
 	useEffect(() => {
 		if (!playerId || players.length === 0 || wasRemovedRef.current) return;
@@ -400,11 +440,36 @@ export default function LobbyScreen() {
 		if (!gameId || !game || !isHost || player.id === game.hostId) return;
 		Alert.alert(
 			`Remove ${player.nickname}?`,
-			'They will be removed from this lobby and lose access to the game.',
+			'They will be removed from this lobby, but they can still rejoin later.',
 			[
 				{ text: 'Cancel', style: 'cancel' },
 				{
 					text: 'Remove',
+					onPress: async () => {
+						try {
+							await actions.removePlayer(player, true);
+						} catch (error) {
+							const message =
+								error instanceof Error
+									? error.message
+									: 'Could not remove this player. Try again.';
+							Alert.alert('Error', message);
+						}
+					},
+				},
+			],
+		);
+	};
+
+	const handleBanPlayer = (player: Player) => {
+		if (!gameId || !game || !isHost || player.id === game.hostId) return;
+		Alert.alert(
+			`Ban ${player.nickname}?`,
+			'They will be removed from this lobby and will not be able to rejoin it.',
+			[
+				{ text: 'Cancel', style: 'cancel' },
+				{
+					text: 'Ban',
 					style: 'destructive',
 					onPress: async () => {
 						try {
@@ -413,7 +478,7 @@ export default function LobbyScreen() {
 							const message =
 								error instanceof Error
 									? error.message
-									: 'Could not remove this player. Try again.';
+									: 'Could not ban this player. Try again.';
 							Alert.alert('Error', message);
 						}
 					},
@@ -428,6 +493,36 @@ export default function LobbyScreen() {
 
 	const handlePlayerAction = (player: Player) => {
 		setActionPlayer(player);
+	};
+
+	const handleChangeNickname = () => {
+		if (!gameId || !playerId) return;
+		const currentNickname = players.find((p) => p.id === playerId)?.nickname ?? '';
+		setPendingNickname(currentNickname);
+		setShowRenameModal(true);
+	};
+
+	const handleSubmitNickname = async (newName: string) => {
+		if (!playerId) return;
+		const trimmed = newName.trim();
+		if (!trimmed || trimmed.length > MAX_NICKNAME_LENGTH) return;
+		const nextKey = normalizeNickname(trimmed);
+		const conflict = players.some(
+			(player) => player.id !== playerId && normalizeNickname(player.nickname) === nextKey,
+		);
+		if (conflict) {
+			Alert.alert('Name taken', 'That nickname is already in use in this lobby.');
+			return;
+		}
+		setSavingNickname(true);
+		try {
+			await actions.updateNickname(playerId, trimmed);
+			setShowRenameModal(false);
+		} catch {
+			Alert.alert('Error', 'Could not update your name. Try again.');
+		} finally {
+			setSavingNickname(false);
+		}
 	};
 
 	const handleStartGame = async () => {
@@ -557,6 +652,9 @@ export default function LobbyScreen() {
 				<ScrollView
 					contentContainerStyle={[styles.container, submitted && { paddingBottom: 220 }]}
 					keyboardShouldPersistTaps="handled"
+					refreshControl={
+						<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+					}
 				>
 					{/* Header */}
 					<View style={styles.header}>
@@ -802,22 +900,46 @@ export default function LobbyScreen() {
 				actions={
 					actionPlayer
 						? [
-								{
-									label: 'Report player',
-									onPress: () => handleReportPlayer(actionPlayer),
-								},
+								...(actionPlayer.id === playerId
+									? [
+											{
+												label: 'Change my name',
+												onPress: handleChangeNickname,
+											},
+										]
+									: [
+											{
+												label: 'Report player',
+												onPress: () => handleReportPlayer(actionPlayer),
+											},
+										]),
 								...(isHost && actionPlayer.id !== game.hostId
 									? [
 											{
 												label: 'Remove from game',
-												tone: 'destructive' as const,
 												onPress: () => handleRemovePlayer(actionPlayer),
+											},
+											{
+												label: 'Ban from lobby',
+												tone: 'destructive' as const,
+												onPress: () => handleBanPlayer(actionPlayer),
 											},
 										]
 									: []),
 							]
 						: []
 				}
+			/>
+
+			<RenameModal
+				visible={showRenameModal}
+				initialValue={pendingNickname}
+				maxLength={MAX_NICKNAME_LENGTH}
+				submitting={savingNickname}
+				onClose={() => {
+					if (!savingNickname) setShowRenameModal(false);
+				}}
+				onSubmit={handleSubmitNickname}
 			/>
 
 		</SafeAreaView>

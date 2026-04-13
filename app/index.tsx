@@ -35,6 +35,7 @@ import {
 	isGameFullError,
 	joinGame,
 	leaveGame,
+	MAX_NICKNAME_LENGTH,
 	type Game,
 } from '../lib/firestore';
 import {
@@ -91,6 +92,7 @@ const RULES = [
 function routeForGame(gameId: string, status: string): string | null {
 	if (status === 'lobby') return `/game/${gameId}/lobby`;
 	if (status === 'active') return `/game/${gameId}/play`;
+	if (status === 'finished') return `/game/${gameId}/winner`;
 	return null;
 }
 
@@ -193,7 +195,7 @@ export default function HomeScreen() {
 					}
 
 					const game = { id: snap.id, ...snap.data() } as Game;
-					if (game.status === 'finished' || game.status === 'cancelled') {
+					if (game.status === 'cancelled') {
 						staleGameIds.push(membership.gameId);
 						continue;
 					}
@@ -708,7 +710,7 @@ export default function HomeScreen() {
 									placeholderTextColor={colors.textLight}
 									value={nickname}
 									onChangeText={setNickname}
-									maxLength={10}
+									maxLength={MAX_NICKNAME_LENGTH}
 									returnKeyType="done"
 									onFocus={() => scrollToAnchor('createNickname')}
 								/>
@@ -785,7 +787,7 @@ export default function HomeScreen() {
 									placeholderTextColor={colors.textLight}
 									value={nickname}
 									onChangeText={setNickname}
-									maxLength={10}
+									maxLength={MAX_NICKNAME_LENGTH}
 									autoFocus
 									returnKeyType="next"
 									onFocus={() => scrollToAnchor('joinNickname')}
@@ -1022,7 +1024,7 @@ export default function HomeScreen() {
 							placeholderTextColor={colors.textLight}
 							value={demoNickname}
 							onChangeText={setDemoNickname}
-							maxLength={10}
+							maxLength={MAX_NICKNAME_LENGTH}
 							autoFocus
 							returnKeyType="done"
 							onSubmitEditing={handleStartDemo}
