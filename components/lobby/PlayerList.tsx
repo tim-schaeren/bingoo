@@ -1,8 +1,7 @@
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Player } from '../../lib/firestore';
-import { colors, spacing, radius, fontSize } from '../../constants/theme';
+import { colors, spacing } from '../../constants/theme';
 
-const COMPACT_THRESHOLD = 5;
 const AVATAR_SIZE = 52;
 
 
@@ -24,10 +23,8 @@ export function PlayerList({
   players,
   playerId,
   hostId,
-  statusLabel,
   onPressPlayer,
 }: Props) {
-  const compact = players.length >= COMPACT_THRESHOLD;
   const sorted = [...players].sort((a, b) => {
     const rank = (p: Player) => p.id === hostId ? 0 : p.id === playerId ? 1 : 2;
     return rank(a) - rank(b);
@@ -35,73 +32,48 @@ export function PlayerList({
 
   return (
     <View style={styles.container}>
+      <View style={styles.avatarWrap}>
+        {sorted.map((p) => {
+          const isMe = p.id === playerId;
+          const isHostPlayer = p.id === hostId;
+          const done = p.predictionsSubmitted;
 
-      {compact ? (
-        <View style={styles.avatarWrap}>
-          {sorted.map((p) => {
-            const isMe = p.id === playerId;
-            const isHostPlayer = p.id === hostId;
-            const done = p.predictionsSubmitted;
+          const bgColor = isHostPlayer ? colors.primaryLight : colors.border;
+          const textColor = isHostPlayer ? colors.primary : colors.text;
 
-            const bgColor = isHostPlayer ? colors.primaryLight : colors.border;
-
-            const textColor = isHostPlayer ? colors.primary : colors.text;
-
-            return (
-              <TouchableOpacity
-                key={p.id}
-                style={styles.avatarItem}
-                onPress={() => { if (!isMe) onPressPlayer?.(p); }}
-                disabled={isMe || !onPressPlayer}
-                activeOpacity={0.75}
-              >
-                <View style={[styles.avatar, { backgroundColor: bgColor }, isMe && styles.avatarMe, isHostPlayer && styles.avatarHost, done && styles.avatarDone]}>
-                  <Text style={[styles.avatarText, { color: textColor }]}>
-                    {getInitials(p.nickname)}
-                  </Text>
-                  {done && (
-                    <View style={styles.doneBadge}>
-                      <Text style={styles.doneBadgeText}>✓</Text>
-                    </View>
-                  )}
-                </View>
-                <Text style={styles.avatarName} numberOfLines={1}>
-                  {p.nickname}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      ) : (
-        <View style={styles.list}>
-          {players.map((p) => (
+          return (
             <TouchableOpacity
               key={p.id}
-              style={styles.row}
-              onPress={() => { if (p.id !== playerId) onPressPlayer?.(p); }}
-              disabled={p.id === playerId || !onPressPlayer}
+              style={styles.avatarItem}
+              onPress={() => onPressPlayer?.(p)}
+              disabled={!onPressPlayer}
               activeOpacity={0.75}
             >
-              <View style={styles.nameRow}>
-                <Text style={styles.name}>{p.nickname}</Text>
-                {p.id === playerId && (
-                  <View style={styles.pillYou}>
-                    <Text style={styles.pillYouText}>you</Text>
-                  </View>
-                )}
-                {p.id === hostId && (
-                  <View style={styles.pillHost}>
-                    <Text style={styles.pillHostText}>host</Text>
+              <View
+                style={[
+                  styles.avatar,
+                  { backgroundColor: bgColor },
+                  isMe && styles.avatarMe,
+                  isHostPlayer && styles.avatarHost,
+                  done && styles.avatarDone,
+                ]}
+              >
+                <Text style={[styles.avatarText, { color: textColor }]}>
+                  {getInitials(p.nickname)}
+                </Text>
+                {done && (
+                  <View style={styles.doneBadge}>
+                    <Text style={styles.doneBadgeText}>✓</Text>
                   </View>
                 )}
               </View>
-              <Text style={[styles.status, p.predictionsSubmitted && styles.statusDone]}>
-                {statusLabel ? statusLabel(p) : p.predictionsSubmitted ? 'Done ✓' : 'Writing…'}
+              <Text style={styles.avatarName} numberOfLines={1}>
+                {p.nickname}
               </Text>
             </TouchableOpacity>
-          ))}
-        </View>
-      )}
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -109,7 +81,6 @@ export function PlayerList({
 const styles = StyleSheet.create({
   container: { gap: spacing.sm },
 
-  // ── Avatar layout (≥5 players) ───────────────────────────────────────────
   avatarWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -166,35 +137,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     maxWidth: AVATAR_SIZE,
   },
-
-  // ── Full row layout (≤4 players) ─────────────────────────────────────────
-  list: { gap: spacing.sm },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  name: { fontSize: fontSize.md, color: colors.text, fontWeight: '500' },
-  pillYou: {
-    backgroundColor: colors.secondary,
-    borderRadius: radius.full,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-  },
-  pillYouText: { fontSize: 11, fontWeight: '700', color: colors.text },
-  pillHost: {
-    backgroundColor: colors.primaryLight,
-    borderRadius: radius.full,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-  },
-  pillHostText: { fontSize: 11, fontWeight: '700', color: colors.primary },
-  status: { fontSize: fontSize.sm, color: colors.textLight },
-  statusDone: { color: colors.success, fontWeight: '600' },
 });

@@ -18,6 +18,7 @@ import {
 	isGameBannedError,
 	isGameFullError,
 	joinGame,
+	MAX_NICKNAME_LENGTH,
 } from '../../lib/firestore';
 import { MAX_MEMBERSHIPS, useGameStore } from '../../store/gameStore';
 
@@ -122,7 +123,7 @@ export default function JoinByLinkScreen() {
 						placeholderTextColor={colors.textLight}
 						value={nickname}
 						onChangeText={setNickname}
-						maxLength={10}
+						maxLength={MAX_NICKNAME_LENGTH}
 						autoFocus
 						returnKeyType="join"
 						onSubmitEditing={handleJoin}

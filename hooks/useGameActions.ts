@@ -9,16 +9,18 @@ import {
 	startGame as fsStartGame,
 	cancelGame as fsCancelGame,
 	leaveGame as fsLeaveGame,
+	removePlayerFromGame as fsRemovePlayerFromGame,
 	banPlayerFromGame as fsBanPlayerFromGame,
 	markPrediction as fsMarkPrediction,
-	announceWinner as fsAnnounceWinner,
+	announceWinners as fsAnnounceWinners,
+	updateNickname as fsUpdateNickname,
 	type Player,
 	type Prediction,
 	type ReportReason,
 	type ReactionEmoji,
 	type Mark,
 } from '../lib/firestore';
-import { generateId, computeGridSize, generateCards } from '../lib/gameLogic';
+import { generateId, computeGridSize, generateCards, computeNextPlace, shouldGameFinish } from '../lib/gameLogic';
 import { useGameStore } from '../store/gameStore';
 
 // Central hub for all game data operations.
@@ -51,6 +53,22 @@ export function useGameActions(gameId: string | undefined) {
 				return;
 			}
 			await fsDeletePrediction(gameId, predictionId);
+		},
+
+		updateNickname: async (playerId: string, nickname: string): Promise<void> => {
+			if (!gameId) return;
+			const trimmedNickname = nickname.trim();
+			if (isDemoMode) {
+				const { players, setPlayers, memberships, upsertMembership } = useGameStore.getState();
+				setPlayers(players.map((p) => p.id === playerId ? { ...p, nickname: trimmedNickname } : p));
+				const m = memberships.find((m) => m.gameId === gameId);
+				if (m) upsertMembership({ ...m, nickname: trimmedNickname });
+				return;
+			}
+			await fsUpdateNickname(gameId, playerId, trimmedNickname);
+			const { memberships, upsertMembership } = useGameStore.getState();
+			const membership = memberships.find((m) => m.gameId === gameId);
+			if (membership) upsertMembership({ ...membership, nickname: trimmedNickname });
 		},
 
 		markPlayerDone: async (playerId: string): Promise<void> => {
@@ -110,6 +128,19 @@ export function useGameActions(gameId: string | undefined) {
 			await fsReportPlayer(gameId, targetPlayerId, reporterId, reason);
 		},
 
+		removePlayer: async (player: Player, fromLobby: boolean): Promise<void> => {
+			if (!gameId) return;
+			if (isDemoMode) {
+				const s = useGameStore.getState();
+				s.setPlayers(s.players.filter((p) => p.id !== player.id));
+				s.setPredictions(s.predictions.filter(
+					(p) => p.authorId !== player.id && p.subjectId !== player.id,
+				));
+				return;
+			}
+			await fsRemovePlayerFromGame(gameId, player.id, fromLobby);
+		},
+
 		banPlayer: async (player: Player, fromLobby: boolean): Promise<void> => {
 			if (!gameId) return;
 			if (isDemoMode) {
@@ -130,7 +161,7 @@ export function useGameActions(gameId: string | undefined) {
 				const cards = generateCards(players, predictions, gridSize);
 				const { setMyCard, setGame, game } = useGameStore.getState();
 				setMyCard(cards[hostPlayerId] ?? null);
-				setGame({ ...game!, status: 'active', gridSize });
+				setGame({ ...game!, status: 'active', gridSize, playerCount: players.length });
 				return;
 			}
 			await fsStartGame(gameId, players, predictions);
@@ -138,6 +169,11 @@ export function useGameActions(gameId: string | undefined) {
 
 		cancelGame: async (): Promise<void> => {
 			if (!gameId) return;
+			if (isDemoMode) {
+				const { game, setGame } = useGameStore.getState();
+				if (game) setGame({ ...game, status: 'cancelled' });
+				return;
+			}
 			await fsCancelGame(gameId);
 		},
 
@@ -162,14 +198,24 @@ export function useGameActions(gameId: string | undefined) {
 			await fsMarkPrediction(gameId, predictionId, playerId, nickname);
 		},
 
-		announceWinner: async (winnerId: string, winnerNickname: string): Promise<void> => {
+		announceWinners: async (newWinners: Array<{ id: string; nickname: string }>): Promise<void> => {
 			if (!gameId) return;
 			if (isDemoMode) {
 				const { game, setGame } = useGameStore.getState();
-				if (game) setGame({ ...game, status: 'finished', winners: [{ id: winnerId, nickname: winnerNickname }] });
+				if (!game) return;
+				const existing = game.winners ?? [];
+				const existingIds = new Set(existing.map((w) => w.id));
+				const fresh = newWinners.filter((w) => !existingIds.has(w.id));
+				if (fresh.length === 0) return;
+				const nextPlace = computeNextPlace(existing);
+				if (nextPlace > 3) return;
+				const withPlace = fresh.map((w) => ({ ...w, place: nextPlace as 1 | 2 | 3 }));
+				const updatedWinners = [...existing, ...withPlace];
+				const finish = shouldGameFinish(existing, fresh.length, game.playerCount ?? updatedWinners.length);
+				setGame({ ...game, winners: updatedWinners, ...(finish ? { status: 'finished' } : {}) });
 				return;
 			}
-			await fsAnnounceWinner(gameId, winnerId, winnerNickname);
+			await fsAnnounceWinners(gameId, newWinners);
 		},
 	};
 }

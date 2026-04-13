@@ -4,6 +4,8 @@ import {
   setDoc,
   getDoc,
   getDocs,
+  getDocFromServer,
+  getDocsFromServer,
   updateDoc,
   deleteDoc,
   onSnapshot,
@@ -13,6 +15,7 @@ import {
   arrayUnion,
   arrayRemove,
   writeBatch,
+  runTransaction,
   Timestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
@@ -22,6 +25,8 @@ import {
   generateCards,
   computeGridSize,
   canStartGameWithPredictions,
+  computeNextPlace,
+  shouldGameFinish,
   MIN_CARD_CELLS,
 } from './gameLogic';
 import { currentUid } from './auth';
@@ -31,6 +36,7 @@ export type GameStatus = 'lobby' | 'active' | 'finished' | 'cancelled';
 export interface Winner {
   id: string;
   nickname: string;
+  place: 1 | 2 | 3;
 }
 
 export interface Game {
@@ -41,6 +47,7 @@ export interface Game {
   hostId: string;
   hostNickname: string;
   gridSize: number;
+  playerCount: number;
   winners: Winner[];
   createdAt: Timestamp;
 }
@@ -82,7 +89,16 @@ export const REPORT_REASONS = [
 export type ReportReason = (typeof REPORT_REASONS)[number];
 export type ReportTargetType = 'prediction' | 'player';
 export const MAX_PLAYERS_PER_LOBBY = 10;
+export const MAX_NICKNAME_LENGTH = 20;
 export const MAX_PREDICTION_LENGTH = 50;
+
+export function sanitizeNickname(nickname: string): string {
+  return nickname.trim();
+}
+
+export function normalizeNickname(nickname: string): string {
+  return sanitizeNickname(nickname).replace(/\s+/g, ' ').toLowerCase();
+}
 
 export class GameBannedError extends Error {
   constructor() {
@@ -131,20 +147,21 @@ export async function createGame(
   const gameId = generateId();
   const playerId = currentUid();
   const code = generateGameCode();
+  const trimmedHostNickname = sanitizeNickname(hostNickname);
 
   await setDoc(doc(db, 'games', gameId), {
     code,
     name: gameName.trim(),
     status: 'lobby',
     hostId: playerId,
-    hostNickname,
+    hostNickname: trimmedHostNickname,
     gridSize: 0, // computed when the game starts
     winners: [],
     createdAt: serverTimestamp(),
   });
 
   await setDoc(doc(db, 'games', gameId, 'players', playerId), {
-    nickname: hostNickname,
+    nickname: trimmedHostNickname,
     predictionsSubmitted: false,
     joinedAt: serverTimestamp(),
     ...(pushToken ? { pushToken } : {}),
@@ -167,12 +184,38 @@ export async function getGameByCode(code: string): Promise<Game | null> {
   return { id: d.id, ...d.data() } as Game;
 }
 
+export async function fetchGame(gameId: string, preferServer = false): Promise<Game | null> {
+  const ref = doc(db, 'games', gameId);
+  const snap = preferServer ? await getDocFromServer(ref) : await getDoc(ref);
+  if (!snap.exists()) return null;
+  return { id: snap.id, ...snap.data() } as Game;
+}
+
+export async function fetchPlayers(gameId: string, preferServer = false): Promise<Player[]> {
+  const ref = collection(db, 'games', gameId, 'players');
+  const snap = preferServer ? await getDocsFromServer(ref) : await getDocs(ref);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Player);
+}
+
+export async function fetchPredictions(gameId: string, preferServer = false): Promise<Prediction[]> {
+  const ref = collection(db, 'games', gameId, 'predictions');
+  const snap = preferServer ? await getDocsFromServer(ref) : await getDocs(ref);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Prediction);
+}
+
+export async function fetchMarks(gameId: string, preferServer = false): Promise<Mark[]> {
+  const ref = collection(db, 'games', gameId, 'marks');
+  const snap = preferServer ? await getDocsFromServer(ref) : await getDocs(ref);
+  return snap.docs.map((d) => ({ predictionId: d.id, ...d.data() }) as Mark);
+}
+
 export async function joinGame(
   gameId: string,
   nickname: string,
   pushToken?: string | null,
 ): Promise<{ playerId: string }> {
   const playerId = currentUid();
+  const trimmedNickname = sanitizeNickname(nickname);
   const playerRef = doc(db, 'games', gameId, 'players', playerId);
   const bannedSnap = await getDoc(doc(db, 'games', gameId, 'bannedPlayers', playerId));
   if (bannedSnap.exists()) {
@@ -180,7 +223,7 @@ export async function joinGame(
   }
 
   await setDoc(playerRef, {
-    nickname,
+    nickname: trimmedNickname,
     predictionsSubmitted: false,
     joinedAt: serverTimestamp(),
     ...(pushToken ? { pushToken } : {}),
@@ -201,6 +244,20 @@ export async function addPrediction(
     subjectId,
     text: text.trim(),
     createdAt: serverTimestamp(),
+  });
+}
+
+export async function updateNickname(gameId: string, playerId: string, nickname: string): Promise<void> {
+  const trimmedNickname = sanitizeNickname(nickname);
+  const gameRef = doc(db, 'games', gameId);
+  const playerRef = doc(db, 'games', gameId, 'players', playerId);
+
+  await runTransaction(db, async (tx) => {
+    const gameSnap = await tx.get(gameRef);
+    tx.update(playerRef, { nickname: trimmedNickname });
+    if (gameSnap.exists() && (gameSnap.data() as Game).hostId === playerId) {
+      tx.update(gameRef, { hostNickname: trimmedNickname });
+    }
   });
 }
 
@@ -259,7 +316,7 @@ export async function startGame(
     setDoc(doc(db, 'games', gameId, 'cards', playerId), { grid })
   );
   await Promise.all(cardWrites);
-  await updateDoc(doc(db, 'games', gameId), { status: 'active', gridSize });
+  await updateDoc(doc(db, 'games', gameId), { status: 'active', gridSize, playerCount: players.length });
 }
 
 // ─── Marking ──────────────────────────────────────────────────────────────────
@@ -277,21 +334,36 @@ export async function markPrediction(
   });
 }
 
-export async function announceWinner(
+export async function announceWinners(
   gameId: string,
-  winnerId: string,
-  winnerNickname: string
+  newWinners: Array<{ id: string; nickname: string }>,
 ): Promise<void> {
-  await updateDoc(doc(db, 'games', gameId), {
-    status: 'finished',
-    winners: arrayUnion({ id: winnerId, nickname: winnerNickname }),
+  const gameRef = doc(db, 'games', gameId);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(gameRef);
+    if (!snap.exists()) return;
+    const game = snap.data() as Game;
+    const existing: Winner[] = game.winners ?? [];
+    const existingIds = new Set(existing.map((w) => w.id));
+    const fresh = newWinners.filter((w) => !existingIds.has(w.id));
+    if (fresh.length === 0) return;
+    const nextPlace = computeNextPlace(existing);
+    if (nextPlace > 3) return;
+    const withPlace: Winner[] = fresh.map((w) => ({ ...w, place: nextPlace }));
+    const updatedWinners = [...existing, ...withPlace];
+    const finish = shouldGameFinish(existing, fresh.length, game.playerCount ?? updatedWinners.length);
+    tx.update(gameRef, {
+      winners: updatedWinners,
+      ...(finish ? { status: 'finished' } : {}),
+    });
   });
 }
 
 // ─── Card ─────────────────────────────────────────────────────────────────────
 
-export async function getCard(gameId: string, playerId: string): Promise<string[] | null> {
-  const snap = await getDoc(doc(db, 'games', gameId, 'cards', playerId));
+export async function getCard(gameId: string, playerId: string, preferServer = false): Promise<string[] | null> {
+  const ref = doc(db, 'games', gameId, 'cards', playerId);
+  const snap = preferServer ? await getDocFromServer(ref) : await getDoc(ref);
   if (!snap.exists()) return null;
   return (snap.data() as { grid: string[] }).grid;
 }
@@ -384,6 +456,27 @@ export async function leaveGame(gameId: string, playerId: string): Promise<void>
   const batch = writeBatch(db);
   asSubject.docs.forEach((d) => batch.delete(d.ref));
   asAuthor.docs.forEach((d) => batch.delete(d.ref));
+  batch.delete(doc(db, 'games', gameId, 'players', playerId));
+  await batch.commit();
+}
+
+export async function removePlayerFromGame(
+  gameId: string,
+  playerId: string,
+  deletePredictions: boolean,
+): Promise<void> {
+  const batch = writeBatch(db);
+
+  if (deletePredictions) {
+    const predictionsRef = collection(db, 'games', gameId, 'predictions');
+    const [asSubject, asAuthor] = await Promise.all([
+      getDocs(query(predictionsRef, where('subjectId', '==', playerId))),
+      getDocs(query(predictionsRef, where('authorId', '==', playerId))),
+    ]);
+    asSubject.docs.forEach((d) => batch.delete(d.ref));
+    asAuthor.docs.forEach((d) => batch.delete(d.ref));
+  }
+
   batch.delete(doc(db, 'games', gameId, 'players', playerId));
   await batch.commit();
 }

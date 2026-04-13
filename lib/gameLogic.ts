@@ -116,6 +116,28 @@ export function getWinningLine(
   return null;
 }
 
+// ─── Podium helpers ───────────────────────────────────────────────────────────
+
+export function computeNextPlace(existingWinners: { place?: 1 | 2 | 3 }[]): 1 | 2 | 3 {
+  const placed = existingWinners.filter((w) => w.place != null);
+  if (placed.length === 0) return 1;
+  const max = Math.max(...placed.map((w) => w.place!));
+  return Math.min(max + 1, 3) as 1 | 2 | 3;
+}
+
+export function shouldGameFinish(
+  existingWinners: { place?: 1 | 2 | 3 }[],
+  newCount: number,
+  playerCount: number,
+): boolean {
+  const nextPlace = computeNextPlace(existingWinners);
+  return nextPlace === 3 || existingWinners.length + newCount >= playerCount;
+}
+
+export function formatPlaceLabel(place: 1 | 2 | 3): string {
+  return place === 1 ? '1st' : place === 2 ? '2nd' : '3rd';
+}
+
 // Short alphanumeric game code — excludes ambiguous chars (0, O, I, 1, L)
 export function generateGameCode(): string {
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';

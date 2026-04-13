@@ -9,6 +9,7 @@ import {
 	ScrollView,
 	ActivityIndicator,
 	Modal,
+	RefreshControl,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,13 +22,17 @@ import {
 	listenToMarks,
 	listenToPlayers,
 	listenToPredictions,
+	fetchGame,
+	fetchMarks,
+	fetchPlayers,
+	fetchPredictions,
 	getCard,
 	type Prediction,
 	type Player,
 	type ReportReason,
 } from '../../../lib/firestore';
 import { useGameActions } from '../../../hooks/useGameActions';
-import { getWinningLine } from '../../../lib/gameLogic';
+import { getWinningLine, formatPlaceLabel, computeNextPlace } from '../../../lib/gameLogic';
 import { useGameStore } from '../../../store/gameStore';
 import { sendPushNotifications } from '../../../lib/notifications';
 import {
@@ -39,7 +44,6 @@ import { ReportModal } from '../../../components/ReportModal';
 import { Ionicons } from '@expo/vector-icons';
 import { BrandWordmark } from '../../../components/BrandWordmark';
 import { PlayerList } from '../../../components/lobby/PlayerList';
-
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const GRID_PADDING = spacing.lg * 2;
@@ -79,6 +83,13 @@ export default function PlayScreen() {
 	const [showPlayersModal, setShowPlayersModal] = useState(false);
 	const [reportingPrediction, setReportingPrediction] =
 		useState<Prediction | null>(null);
+	const [podiumModal, setPodiumModal] = useState<{
+		place: 1 | 2 | 3;
+		names: string;
+		iWon: boolean;
+	} | null>(null);
+	const [refreshing, setRefreshing] = useState(false);
+	const botWinTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 	const wasRemovedRef = useRef(false);
 
 	const handleRemovedFromGame = () => {
@@ -115,6 +126,7 @@ export default function PlayScreen() {
 				(g) => {
 					setGame(g);
 					if (g.status === 'finished') router.replace(`/game/${gameId}/winner`);
+					if (g.status === 'cancelled') { removeMembership(gameId); router.replace('/'); }
 				},
 				onListenerError,
 			),
@@ -125,15 +137,67 @@ export default function PlayScreen() {
 		return () => unsubs.forEach((u) => u());
 	}, [gameId, setCurrentGame, setGame, setMarks, setPredictions, setPlayers]);
 
+	// Clean up any pending bot-win timers on unmount
+	useEffect(() => {
+		return () => botWinTimers.current.forEach(clearTimeout);
+	}, []);
+
 	useEffect(() => {
 		if (gameId && !membership) router.replace('/');
 	}, [gameId, membership]);
+
+	const handleRefresh = async () => {
+		if (!gameId || isDemoMode) return;
+		setRefreshing(true);
+		try {
+			const [nextGame, nextMarks, nextPredictions, nextPlayers] = await Promise.all([
+				fetchGame(gameId, true),
+				fetchMarks(gameId, true),
+				fetchPredictions(gameId, true),
+				fetchPlayers(gameId, true),
+			]);
+			if (!nextGame) {
+				removeMembership(gameId);
+				router.replace('/');
+				return;
+			}
+			setGame(nextGame);
+			setMarks(nextMarks);
+			setPredictions(nextPredictions);
+			setPlayers(nextPlayers);
+			if (playerId) {
+				const ownGrid = await getCard(gameId, playerId, true);
+				if (ownGrid) setMyCard(ownGrid);
+			}
+			const cardResults = await Promise.all(
+				nextPlayers.map(async (player) => {
+					const grid = await getCard(gameId, player.id, true);
+					return grid ? [player.id, grid] as const : null;
+				}),
+			);
+			setAllCards(new Map(cardResults.filter(Boolean) as Array<readonly [string, string[]]>));
+			if (nextGame.status === 'finished') router.replace(`/game/${gameId}/winner`);
+			if (nextGame.status === 'cancelled') {
+				removeMembership(gameId);
+				router.replace('/');
+			}
+		} catch {
+			Alert.alert('Refresh failed', 'Could not refresh the game right now. Try again.');
+		} finally {
+			setRefreshing(false);
+		}
+	};
 
 	useEffect(() => {
 		if (!playerId || players.length === 0 || wasRemovedRef.current) return;
 		if (players.some((p) => p.id === playerId)) return;
 		handleRemovedFromGame();
 	}, [players, playerId]);
+
+	// Seed announcedWinners from store on mount to prevent re-announcing after remount
+	useEffect(() => {
+		game?.winners.forEach((w) => announcedWinners.current.add(w.id));
+	}, []);
 
 	// Load own card for display
 	useEffect(() => {
@@ -185,21 +249,41 @@ export default function PlayScreen() {
 		const markedSet = new Set(marks.map((m) => m.predictionId));
 
 		if (isDemoMode) {
-			// Only the host can win in demo mode
-			if (!myCard || !playerId || !nickname || announcedWinners.current.has(playerId)) return;
+			// Only the host can win in demo mode; bots win on a timer after host wins
+			if (
+				!myCard ||
+				!playerId ||
+				!nickname ||
+				announcedWinners.current.has(playerId)
+			)
+				return;
 			const line = getWinningLine(myCard, markedSet, gridSize);
 			if (!line) return;
 			announcedWinners.current.add(playerId);
 			setWinningLine(line);
 			feedbackWin();
-			setTimeout(async () => {
-				await actions.announceWinner(playerId, nickname);
-				router.replace(`/game/${gameId}/winner`);
-			}, 1500);
+			actions.announceWinners([{ id: playerId, nickname }]).catch(() => {});
+
+			// Schedule up to 2 bot wins for 2nd and 3rd place
+			const bots = players.filter((p) => p.id !== playerId);
+			bots.slice(0, 2).forEach((bot, i) => {
+				const t = setTimeout(
+					() => {
+						announcedWinners.current.add(bot.id);
+						actions
+							.announceWinners([{ id: bot.id, nickname: bot.nickname }])
+							.catch(() => {});
+					},
+					(i + 1) * 4000,
+				);
+				botWinTimers.current.push(t);
+			});
 			return;
 		}
 
 		const activePlayerIds = new Set(players.map((p) => p.id));
+		const newWinners: Array<{ id: string; nickname: string }> = [];
+
 		allCards.forEach((grid, pid) => {
 			if (!activePlayerIds.has(pid)) return;
 			if (announcedWinners.current.has(pid)) return;
@@ -211,19 +295,49 @@ export default function PlayScreen() {
 				feedbackWin();
 			}
 			const winner = players.find((p) => p.id === pid);
-			const winnerNickname = winner?.nickname ?? 'Someone';
-			actions.announceWinner(pid, winnerNickname)
+			newWinners.push({ id: pid, nickname: winner?.nickname ?? 'Someone' });
+		});
+
+		if (newWinners.length > 0) {
+			const nextPlace = computeNextPlace(game.winners ?? []);
+			const placeLabel = formatPlaceLabel(nextPlace);
+			actions
+				.announceWinners(newWinners)
 				.then(() => {
 					const tokens = players
-						.filter((p) => p.id !== pid)
+						.filter((p) => !newWinners.some((w) => w.id === p.id))
 						.map((p) => p.pushToken);
-					sendPushNotifications(tokens, 'bingoo! 🎉', `${winnerNickname} won!`);
+					const names = newWinners.map((w) => w.nickname).join(' & ');
+					sendPushNotifications(tokens, 'bingoo! 🎉', `${names} got ${placeLabel} place!`);
 				})
 				.catch(() => {});
-		});
+		}
 	}, [marks, allCards]);
 
 	const markedIds = new Set(marks.map((m) => m.predictionId));
+
+	// Show podium modal when a place is awarded but game continues.
+	// It stays visible until the player dismisses it.
+	useEffect(() => {
+		if (!game || game.status === 'finished') return;
+		const winners = game.winners ?? [];
+		if (winners.length === 0) return;
+		const latestPlace = Math.max(...winners.map((w) => w.place ?? 1)) as 1 | 2 | 3;
+		const atPlace = winners.filter((w) => (w.place ?? 1) === latestPlace);
+		const iWon = atPlace.some((w) => w.id === playerId);
+		const names = atPlace
+			.filter((w) => w.id !== playerId)
+			.map((w) => w.nickname)
+			.join(' & ');
+		setPodiumModal({ place: latestPlace, names, iWon });
+	}, [game?.winners?.length]);
+
+	// Navigate when game ends (covers both real and demo mode)
+	useEffect(() => {
+		if (!gameId) return;
+		if (game?.status === 'finished') router.replace(`/game/${gameId}/winner`);
+		if (game?.status === 'cancelled') { if (isDemoMode) setDemoMode(false); removeMembership(gameId); router.replace('/'); }
+	}, [game?.status]);
 
 	const getPrediction = (predictionId: string) =>
 		predictions.find((p) => p.id === predictionId);
@@ -250,11 +364,18 @@ export default function PlayScreen() {
 	const handleShare = async () => {
 		if (!shareRef.current) return;
 		try {
-			const captured = await captureRef(shareRef, { format: 'jpg', quality: 0.9 });
-			const reencoded = await ImageManipulator.manipulateAsync(
-				captured, [], { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
-			);
-			await Sharing.shareAsync(reencoded.uri, { mimeType: 'image/jpeg', UTI: 'public.jpeg' });
+			const captured = await captureRef(shareRef, {
+				format: 'jpg',
+				quality: 0.9,
+			});
+			const reencoded = await ImageManipulator.manipulateAsync(captured, [], {
+				compress: 0.9,
+				format: ImageManipulator.SaveFormat.JPEG,
+			});
+			await Sharing.shareAsync(reencoded.uri, {
+				mimeType: 'image/jpeg',
+				UTI: 'public.jpeg',
+			});
 		} catch {
 			// user dismissed share sheet — not an error
 		}
@@ -265,22 +386,39 @@ export default function PlayScreen() {
 		feedbackMark();
 		setSelectedPredId(null);
 		const pred = getPrediction(predictionId);
-		actions.markPrediction(predictionId, playerId, nickname)
+		actions
+			.markPrediction(predictionId, playerId, nickname)
 			.then(() => {
 				if (isDemoMode) return;
 				const tokens = players
 					.filter((p) => p.id !== playerId && p.id !== pred?.subjectId)
 					.map((p) => p.pushToken);
 				const predText = pred?.text ?? '';
+				const subjectName = pred ? getPlayerName(pred.subjectId) : 'Someone';
 				sendPushNotifications(
 					tokens,
 					'a prediction came true ✓',
-					`${nickname}: "${predText}"`,
+					`${subjectName} ${predText}`,
 				);
 			})
 			.catch(() => {
 				Alert.alert('Error', 'Could not mark this prediction. Try again.');
 			});
+	};
+
+	const confirmMarkPrediction = (predictionId: string) => {
+		const predText = getPredictionText(predictionId);
+		Alert.alert(
+			'Mark as true?',
+			`Are you sure this happened?\n\n"${predText}"`,
+			[
+				{ text: 'Cancel', style: 'cancel' },
+				{
+					text: 'Mark as true',
+					onPress: () => doMarkPrediction(predictionId),
+				},
+			],
+		);
 	};
 
 	const handleReportSelectedPrediction = async (reason: ReportReason) => {
@@ -308,13 +446,34 @@ export default function PlayScreen() {
 					style: 'destructive',
 					onPress: async () => {
 						try {
-							await actions.banPlayer(player, false);
+							await actions.removePlayer(player, false);
 						} catch (error) {
 							const message =
 								error instanceof Error
 									? error.message
 									: 'Could not remove this player. Try again.';
 							Alert.alert('Error', message);
+						}
+					},
+				},
+			],
+		);
+	};
+
+	const handleCancelGame = () => {
+		Alert.alert(
+			'Cancel game?',
+			'This will end the game for everyone immediately.',
+			[
+				{ text: 'Keep playing', style: 'cancel' },
+				{
+					text: 'Cancel game',
+					style: 'destructive',
+					onPress: async () => {
+						try {
+							await actions.cancelGame();
+						} catch {
+							Alert.alert('Error', 'Could not cancel the game. Try again.');
 						}
 					},
 				},
@@ -337,7 +496,12 @@ export default function PlayScreen() {
 
 	return (
 		<SafeAreaView style={styles.safe}>
-			<ScrollView contentContainerStyle={styles.container}>
+			<ScrollView
+				contentContainerStyle={styles.container}
+				refreshControl={
+					<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+				}
+			>
 				<View style={styles.header}>
 					{game?.hostId === playerId ? (
 						<TouchableOpacity
@@ -354,7 +518,10 @@ export default function PlayScreen() {
 					</View>
 					<TouchableOpacity
 						onPress={() => {
-							if (isDemoMode) { setDemoMode(false); if (gameId) removeMembership(gameId); }
+							if (isDemoMode) {
+								setDemoMode(false);
+								if (gameId) removeMembership(gameId);
+							}
 							router.replace('/');
 						}}
 						style={styles.homeButton}
@@ -460,7 +627,7 @@ export default function PlayScreen() {
 								{!selectedIsMarked && (
 									<TouchableOpacity
 										style={styles.markButton}
-										onPress={() => doMarkPrediction(selectedPredId!)}
+										onPress={() => confirmMarkPrediction(selectedPredId!)}
 									>
 										<Text style={styles.markButtonText}>mark as true</Text>
 									</TouchableOpacity>
@@ -525,6 +692,12 @@ export default function PlayScreen() {
 						>
 							<Text style={styles.closeButtonText}>Close</Text>
 						</TouchableOpacity>
+						<TouchableOpacity
+							style={styles.cancelGameButton}
+							onPress={() => { setShowPlayersModal(false); handleCancelGame(); }}
+						>
+							<Text style={styles.cancelGameButtonText}>Cancel game</Text>
+						</TouchableOpacity>
 					</TouchableOpacity>
 				</TouchableOpacity>
 			</Modal>
@@ -571,47 +744,89 @@ export default function PlayScreen() {
 				</TouchableOpacity>
 			</Modal>
 
-		{/* Off-screen non-interactive card — plain Views instead of TouchableOpacity for reliable WhatsApp sharing */}
-		{myCard && (
-			<View
-				ref={shareRef}
-				collapsable={false}
-				pointerEvents="none"
-				style={styles.shareCard}
-			>
-				<Text style={styles.shareCardLabel}>
-					{winningLine ? 'Your winning card' : 'Your card'}
-				</Text>
-				<View style={styles.grid}>
-					{myCard.map((predictionId, index) => {
-						const isMarked = markedIds.has(predictionId);
-						const isWinCell = winningLine?.includes(index) ?? false;
-						return (
-							<View
-								key={predictionId}
-								style={[
-									styles.cell,
-									{ width: cellSize, height: cellHeight },
-									isMarked && styles.cellMarked,
-									isWinCell && styles.cellWin,
-								]}
-							>
-								<Text
+			{/* Off-screen non-interactive card — plain Views instead of TouchableOpacity for reliable WhatsApp sharing */}
+			{myCard && (
+				<View
+					ref={shareRef}
+					collapsable={false}
+					pointerEvents="none"
+					style={styles.shareCard}
+				>
+					<Text style={styles.shareCardLabel}>
+						{winningLine ? 'Your winning card' : 'Your card'}
+					</Text>
+					<View style={styles.grid}>
+						{myCard.map((predictionId, index) => {
+							const isMarked = markedIds.has(predictionId);
+							const isWinCell = winningLine?.includes(index) ?? false;
+							return (
+								<View
+									key={predictionId}
 									style={[
-										styles.cellText,
-										{ fontSize: cellFontSize },
-										isMarked && styles.cellTextMarked,
-										isWinCell && styles.cellTextWin,
+										styles.cell,
+										{ width: cellSize, height: cellHeight },
+										isMarked && styles.cellMarked,
+										isWinCell && styles.cellWin,
 									]}
 								>
-									{getPredictionText(predictionId)}
-								</Text>
-							</View>
-						);
-					})}
+									<Text
+										style={[
+											styles.cellText,
+											{ fontSize: cellFontSize },
+											isMarked && styles.cellTextMarked,
+											isWinCell && styles.cellTextWin,
+										]}
+									>
+										{getPredictionText(predictionId)}
+									</Text>
+								</View>
+							);
+						})}
+					</View>
 				</View>
-			</View>
-		)}
+			)}
+			<Modal
+				visible={!!podiumModal}
+				transparent
+				animationType="fade"
+				onRequestClose={() => setPodiumModal(null)}
+			>
+				<View style={styles.podiumOverlay}>
+					<View style={styles.podiumModalCard}>
+						<Text style={styles.podiumModalEmoji}>
+							{podiumModal?.place === 1 ? '🥇' : podiumModal?.place === 2 ? '🥈' : '🥉'}
+						</Text>
+						{podiumModal?.iWon ? (
+							<>
+								<Text style={styles.podiumModalPlace}>
+									You got {podiumModal ? formatPlaceLabel(podiumModal.place) : ''} place!
+								</Text>
+								{podiumModal.names.length > 0 && (
+									<Text style={styles.podiumModalNames}>
+										tied with {podiumModal.names}
+									</Text>
+								)}
+							</>
+						) : (
+							<>
+								<Text style={styles.podiumModalNames}>
+									{podiumModal?.names || 'Someone'}
+								</Text>
+								<Text style={styles.podiumModalPlace}>
+									got {podiumModal ? formatPlaceLabel(podiumModal.place) : ''} place!
+								</Text>
+							</>
+						)}
+						<Text style={styles.podiumModalSub}>the game continues…</Text>
+						<TouchableOpacity
+							style={styles.podiumDismissButton}
+							onPress={() => setPodiumModal(null)}
+						>
+							<Text style={styles.podiumDismissButtonText}>Got it</Text>
+						</TouchableOpacity>
+					</View>
+				</View>
+			</Modal>
 		</SafeAreaView>
 	);
 }
@@ -619,6 +834,49 @@ export default function PlayScreen() {
 const styles = StyleSheet.create({
 	safe: { flex: 1, backgroundColor: colors.background },
 	container: { padding: spacing.lg, gap: spacing.lg, alignItems: 'center' },
+	podiumOverlay: {
+		flex: 1,
+		backgroundColor: 'rgba(0,0,0,0.5)',
+		justifyContent: 'center',
+		alignItems: 'center',
+		padding: spacing.xl,
+	},
+	podiumModalCard: {
+		backgroundColor: colors.surface,
+		borderRadius: radius.lg,
+		padding: spacing.xl,
+		alignItems: 'center',
+		gap: spacing.sm,
+		width: '100%',
+	},
+	podiumModalEmoji: { fontSize: 64 },
+	podiumModalPlace: {
+		fontSize: fontSize.xl,
+		fontWeight: '900',
+		color: colors.text,
+	},
+	podiumModalNames: {
+		fontSize: fontSize.md,
+		fontWeight: '700',
+		color: colors.primary,
+		textAlign: 'center',
+	},
+	podiumModalSub: {
+		fontSize: fontSize.sm,
+		color: colors.textLight,
+	},
+	podiumDismissButton: {
+		marginTop: spacing.sm,
+		backgroundColor: colors.primary,
+		borderRadius: radius.md,
+		paddingHorizontal: spacing.lg,
+		paddingVertical: spacing.sm,
+	},
+	podiumDismissButtonText: {
+		color: '#fff',
+		fontSize: fontSize.sm,
+		fontWeight: '700',
+	},
 
 	header: {
 		flexDirection: 'row',
@@ -773,6 +1031,8 @@ const styles = StyleSheet.create({
 	},
 	closeButton: { alignItems: 'center', padding: spacing.sm },
 	closeButtonText: { color: colors.textLight, fontSize: fontSize.md },
+	cancelGameButton: { alignItems: 'center', padding: spacing.sm },
+	cancelGameButtonText: { color: colors.error, fontSize: fontSize.sm, fontWeight: '700' },
 
 	historyCard: { maxHeight: '80%' },
 	playersCard: { maxHeight: '80%' },
@@ -833,5 +1093,4 @@ const styles = StyleSheet.create({
 		marginBottom: spacing.sm,
 		textAlign: 'center',
 	},
-
 });
